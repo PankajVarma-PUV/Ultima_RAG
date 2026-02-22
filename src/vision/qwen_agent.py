@@ -19,7 +19,7 @@ class QwenVisionAgent:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _lazy_load(self):
-        """Load model with 4-bit quantization and CPU offloading if not already loaded."""
+        """Load model with adaptive configuration (4-bit for GPU, standard for CPU)."""
         if self.model is not None:
             return
 
@@ -27,36 +27,47 @@ class QwenVisionAgent:
         try:
             import transformers
             from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-            from transformers import BitsAndBytesConfig
             import qwen_vl_utils
             import accelerate
             
             logger.info("Found all vision dependencies: transformers, qwen_vl_utils, accelerate.")
 
-            # 4-bit quantization config for 6GB VRAM
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-            )
-
             self.processor = AutoProcessor.from_pretrained(self.model_id)
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-                self.model_id,
-                quantization_config=bnb_config,
-                device_map="auto",
-                # Force offload to CPU if VRAM is tight (6GB limit)
-                max_memory={0: "4GiB", "cpu": "24GiB"}, 
-                low_cpu_mem_usage=True
-            )
-            logger.info(f"Qwen2-VL-2B loaded successfully on {self.device} with 4-bit quantization.")
+            
+            # Logic: Use quantization ONLY if GPU is available
+            kwargs = {
+                "pretrained_model_name_or_path": self.model_id,
+                "low_cpu_mem_usage": True,
+            }
+
+            if torch.cuda.is_available():
+                from transformers import BitsAndBytesConfig
+                # 4-bit quantization config for 6GB VRAM
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                )
+                kwargs["quantization_config"] = bnb_config
+                kwargs["device_map"] = "auto"
+                kwargs["max_memory"] = {0: "4GiB", "cpu": "24GiB"}
+                logger.info("GPU detected: Enabling 4-bit quantization and auto device mapping.")
+            else:
+                # CPU fallback: No quantization (bitsandbytes doesn't support CPU), use float32 or bfloat16
+                kwargs["device_map"] = "cpu"
+                kwargs["torch_dtype"] = torch.float32 # Safest for CPU, can use bfloat16 if memory is tight
+                logger.info("No GPU detected: Falling back to CPU mode (Float32).")
+
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(**kwargs)
+            logger.info(f"Qwen2-VL-2B loaded successfully on {self.device}.")
         except ImportError as e:
             logger.error(f"Missing dependency for Qwen2-VL: {e}. Please run 'pip install qwen-vl-utils accelerate bitsandbytes'")
             raise
         except Exception as e:
             logger.error(f"Failed to load Qwen2-VL model ({self.model_id}): {e}")
-            logger.error("Check if you have enough VRAM (6GB recommended) and if NumPy version is < 2.0.0")
+            if "accelerator device" in str(e).lower():
+                logger.error("HINT: This usually happens when bitsandbytes quantization is attempted on a CPU-only machine.")
             raise
 
     async def describe_image(self, pil_image: Image.Image, prompt: str = None) -> str:

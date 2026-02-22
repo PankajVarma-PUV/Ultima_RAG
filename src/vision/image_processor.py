@@ -40,8 +40,10 @@ class ImageProcessor:
             try:
                 import easyocr
                 logger.info("Initializing EasyOCR reader...")
-                # Enable GPU acceleration as CUDA is clearly available and used by Qwen2-VL
-                self.ocr_reader = easyocr.Reader(['en'], gpu=True)
+                # Enable GPU acceleration only if CUDA is available
+                cuda_available = torch.cuda.is_available()
+                self.ocr_reader = easyocr.Reader(['en'], gpu=cuda_available)
+                logger.info(f"EasyOCR reader initialized (GPU={cuda_available})")
             except ImportError:
                 logger.warning("easyocr not installed. OCR stage will be skipped.")
                 return None

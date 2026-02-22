@@ -1,4 +1,7 @@
 # Core ML Libraries
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
 sentence-transformers>=2.2.0,<3.0.0
 transformers>=4.45.0
 accelerate>=0.26.0
