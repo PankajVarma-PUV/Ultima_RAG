@@ -14,6 +14,12 @@ if %errorlevel% neq 0 (
 )
 
 echo 🚀 Cloning repository...
+:: Overwrite logic: Remove existing folder if it exists
+if exist "%~dp0SentinelRAG_Clone" (
+    echo 🗑️ Existing SentinelRAG_Clone folder detected. Overwriting...
+    rmdir /s /q "%~dp0SentinelRAG_Clone"
+)
+
 :: Use quotes around the path to handle spaces in folder names correctly
 git clone "%REPO_URL%" "%~dp0SentinelRAG_Clone"
 

@@ -38,25 +38,20 @@ SentinelRAG is designed to be run **locally** to ensure complete data privacy an
 - Python 3.10+
 - [Ollama](https://ollama.com/) (running locally) or equivalent API credentials.
 
-### Installation
-1.  Clone the repository:
+### Installation & Setup
+
+SentinelRAG features a **Smart setup script** that automatically detects your hardware (NVIDIA GPU vs CPU) and installs the correct ML stack for you.
+
+1.  **Clone the repository**:
     ```bash
     git clone https://github.com/your-username/SentinelRAG.git
     cd SentinelRAG
     ```
-2.  Install dependencies:
+2.  **Start the Application**:
+    Simply run the automated startup script. It will create a virtual environment, install the correct version of Torch for your hardware, and launch the server:
     ```bash
-    pip install -r requirements.txt
+    run_sentinelrag.bat
     ```
-3.  Set up environment variables:
-    - Copy `.env.example` to `Credentials/.env`.
-    - Update `Credentials/.env` with your model names and API keys if needed.
-
-### Running the Application
-Simply run the provided batch script:
-```bash
-./run_sentinelrag.bat
-```
 The API server will start at `http://localhost:8000`, and the UI will be accessible in your web browser.
 
 ## 📁 Project Structure

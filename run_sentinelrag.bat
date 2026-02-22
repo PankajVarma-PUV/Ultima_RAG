@@ -101,25 +101,51 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 
 :: ============ STEP 5: Dependency Installation =============
-echo [5/6] Checking dependencies...
+echo [5/6] Checking dependencies (Hardware-Aware)...
 
-:: Check for core dependencies (including new PDF exporter)
-"%VENV_PYTHON%" -c "import lancedb; import langgraph; import langchain_ollama; from fpdf import FPDF" >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [INFO] Core dependencies missing. Installing...
-    echo.
-    
-    :: Install all requirements
-    "%VENV_PIP%" install -r "%BASE_DIR%\requirements.txt"
-    if !ERRORLEVEL! NEQ 0 (
-        echo [ERROR] Dependency installation failed.
-        pause
-        exit /b 1
-    )
-    echo [OK] All dependencies installed successfully
+REM Check if torch and other core modules are functional
+"%VENV_PYTHON%" -c "import torch; import lancedb; import langgraph; from fpdf import FPDF" >nul 2>&1
+if %ERRORLEVEL% EQU 0 goto :dependencies_ok
+
+echo [INFO] Dependencies missing or misconfigured. Initializing setup...
+
+REM --- SMART HARDWARE DETECTION ---
+set "USE_GPU=0"
+nvidia-smi >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo [OK] NVIDIA GPU Detected.
+    set "USE_GPU=1"
 ) else (
-    echo [OK] All core dependencies verified
+    echo [INFO] No NVIDIA GPU detected. Using CPU mode.
 )
+
+REM --- DYNAMIC TORCH INSTALLATION ---
+if "%USE_GPU%"=="1" (
+    echo [INFO] Installing GPU-Optimized Torch...
+    "%VENV_PIP%" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --quiet
+) else (
+    echo [INFO] Installing standard Torch (CPU)...
+    "%VENV_PIP%" install torch torchvision torchaudio --quiet
+)
+
+REM Install remaining requirements
+echo [INFO] Installing remaining dependencies...
+"%VENV_PIP%" install -r "%BASE_DIR%\requirements.txt"
+
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Dependency installation failed.
+    pause
+    exit /b 1
+)
+
+echo [OK] All dependencies installed successfully.
+goto :dependencies_done
+
+:dependencies_ok
+echo [OK] All core dependencies verified.
+
+:dependencies_done
+echo.
 echo.
 
 :: ============== STEP 6: Data Directory Setup ==============
