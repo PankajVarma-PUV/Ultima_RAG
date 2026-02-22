@@ -4,12 +4,8 @@ venv/
 
 
 
-# Sensitive Data
-Credentials/.env
-.env
-*.config
-*.json
-!Credentials/
+# Sensitive Data (Enabled for upload per user request)
+# .env files and Credentials/ contents are now TRACKED
 
 # Project Specific Data & Models
 data/uploads/
