@@ -103,11 +103,15 @@ echo.
 :: ============ STEP 5: Dependency Installation =============
 echo [5/6] Checking dependencies (Hardware-Aware)...
 
-REM Check if torch and other core modules are functional
-"%VENV_PYTHON%" -c "import torch; import lancedb; import langgraph; from fpdf import FPDF" >nul 2>&1
-if %ERRORLEVEL% EQU 0 goto :dependencies_ok
+REM 5.1: PyTorch Verification & Installation
+echo [INFO] Verifying PyTorch installation...
+"%VENV_PYTHON%" -c "import torch" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo [OK] PyTorch is already installed.
+    goto :check_other_deps
+)
 
-echo [INFO] Dependencies missing or misconfigured. Initializing setup...
+echo [INFO] PyTorch not found. Initializing hardware-specific setup...
 
 REM --- SMART HARDWARE DETECTION ---
 set "USE_GPU=0"
@@ -121,15 +125,30 @@ if %ERRORLEVEL% EQU 0 (
 
 REM --- DYNAMIC TORCH INSTALLATION ---
 if "%USE_GPU%"=="1" (
-    echo [INFO] Installing GPU-Optimized Torch...
+    echo [INFO] Installing GPU-Optimized Torch (CUDA 11.8)...
     "%VENV_PIP%" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 --quiet
 ) else (
     echo [INFO] Installing standard Torch (CPU)...
     "%VENV_PIP%" install torch torchvision torchaudio --quiet
 )
 
-REM Install remaining requirements
-echo [INFO] Installing remaining dependencies...
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] PyTorch installation failed.
+    pause
+    exit /b 1
+)
+echo [OK] PyTorch installed successfully.
+
+:check_other_deps
+REM 5.2: General Dependencies Verification
+echo [INFO] Verifying other core dependencies...
+"%VENV_PYTHON%" -c "import lancedb; import langgraph; from fpdf import FPDF" >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    echo [OK] All core dependencies verified.
+    goto :dependencies_done
+)
+
+echo [INFO] Installing remaining dependencies from requirements.txt...
 "%VENV_PIP%" install -r "%BASE_DIR%\requirements.txt"
 
 if %ERRORLEVEL% NEQ 0 (
@@ -139,10 +158,6 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo [OK] All dependencies installed successfully.
-goto :dependencies_done
-
-:dependencies_ok
-echo [OK] All core dependencies verified.
 
 :dependencies_done
 echo.
