@@ -1,5 +1,5 @@
 """
-Vision Perception Agent for SentinelRAG.
+Vision Perception Agent for Ultima_RAG.
 Handles Qwen2-VL-2B inference via HuggingFace Transformers.
 Optimized for 6GB VRAM using 4-bit quantization and CPU offloading.
 """
@@ -20,7 +20,7 @@ class QwenVisionAgent:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _check_gpu_health(self):
-        """Forensic GPU diagnostic for SentinelRAG Elite."""
+        """Forensic GPU diagnostic for Ultima_RAG Elite."""
         logger.info("🕵️ GPU Diagnostic: Running health check...")
         try:
             torch_ver = torch.__version__
@@ -69,7 +69,7 @@ class QwenVisionAgent:
             }
 
             # Check if user wants to force GPU (can be useful if basic check fails but path exists)
-            force_gpu = os.getenv("SENTINEL_FORCE_GPU", "false").lower() == "true"
+            force_gpu = os.getenv("Ultima_FORCE_GPU", "false").lower() == "true"
             use_cuda = torch.cuda.is_available() or force_gpu
 
             if use_cuda:
@@ -219,3 +219,4 @@ def get_vision_agent() -> QwenVisionAgent:
     if _vision_agent is None:
         _vision_agent = QwenVisionAgent()
     return _vision_agent
+

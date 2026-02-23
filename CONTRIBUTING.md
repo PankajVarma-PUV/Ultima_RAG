@@ -1,6 +1,6 @@
-# Contributing to SentinelRAG
+# Contributing to Ultima_RAG
 
-First off, thank you for considering contributing to SentinelRAG! It's people like you that make SentinelRAG such a great tool.
+First off, thank you for considering contributing to Ultima_RAG! It's people like you that make Ultima_RAG such a great tool.
 
 ## How Can I Contribute?
 
@@ -27,3 +27,4 @@ First off, thank you for considering contributing to SentinelRAG! It's people li
 
 ## Questions?
 Feel free to open an issue for any questions or project-related discussions.
+

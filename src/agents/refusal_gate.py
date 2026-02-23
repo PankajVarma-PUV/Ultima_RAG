@@ -1,5 +1,5 @@
 """
-Refusal Gate Agent for SentinelRAG
+Refusal Gate Agent for Ultima_RAG
 Now operates as a Quality Indicator agent - always returns answers with confidence scores.
 Changed from "reject policy" to "always show with fact score" policy.
 """
@@ -301,3 +301,4 @@ def make_decision(
     """Convenience function to analyze quality and return response with indicators"""
     gate = get_refusal_gate()
     return gate.decide(synthesis_output, fact_check_output, query_analysis)
+

@@ -1,5 +1,21 @@
+# UltimaRAG — Multi-Agent RAG System
+# Copyright (C) 2026 Pankaj Varma
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
-Core Configuration Module for SentinelRAG
+Core Configuration Module for UltimaRAG
 Centralized configuration management with environment variable support.
 
 ALL performance-sensitive values are driven by environment variables.
@@ -196,7 +212,7 @@ class RefusalGateConfig:
 # SynthesisConfig has been intentionally REMOVED.
 # The iterative continuation loop (CONTINUE_PROMPT / MAX_CONTINUATION_LOOPS)
 # caused Context Inflation crashes on low-resource hardware (2048-ctx).
-# SentinelRAG now uses Single-Shot generation with a prompt Token Budget Guard.
+# Ultima_RAG now uses Single-Shot generation with a prompt Token Budget Guard.
 # Response quality is maintained via the Healer node in metacognitive_brain.py.
 
 
@@ -295,7 +311,7 @@ class PathConfig:
     MODELS_DIR: Path = BASE_DIR / "models"
     INDEXES_DIR: Path = MODELS_DIR / "indexes"
     CACHE_DIR: Path = BASE_DIR / "cache"
-    SENTINEL_DB_DIR: Path = DATA_DIR / "sentinel_db"
+    Ultima_DB_DIR: Path = DATA_DIR / "Ultima_db"
 
     @classmethod
     def ensure_dirs(cls):
@@ -382,3 +398,4 @@ class Config:
 
 # Initialize paths on import
 PathConfig.ensure_dirs()
+

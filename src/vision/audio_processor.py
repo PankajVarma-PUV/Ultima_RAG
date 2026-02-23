@@ -1,5 +1,5 @@
 """
-Audio Processor for SentinelRAG.
+Audio Processor for Ultima_RAG.
 Uses Faster-Whisper for high-speed local transcription.
 
 Output structure:
@@ -81,3 +81,4 @@ class AudioProcessor:
 
         logger.info(f"Audio processing complete: {len(scraped_items)} items")
         return scraped_items
+

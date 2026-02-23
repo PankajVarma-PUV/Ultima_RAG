@@ -1,5 +1,5 @@
 """
-Ollama Client for SentinelRAG
+Ollama Client for Ultima_RAG
 HTTP client for local Ollama API with automatic token management.
 """
 
@@ -229,3 +229,4 @@ def generate_with_ollama(
     """Convenience function to generate with Ollama (Text-only)"""
     client = get_ollama_client()
     return client.generate(prompt, temperature=temperature, max_tokens=max_tokens)
+

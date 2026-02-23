@@ -1,5 +1,5 @@
 """
-SentinelRAG Telemetry Utility
+Ultima_RAG Telemetry Utility
 Captures agentic activity and performance metrics for real-time UI updates.
 """
 from typing import Dict, Any, Optional
@@ -63,3 +63,4 @@ class TelemetryManager:
 
 # Global instance
 telemetry = TelemetryManager()
+

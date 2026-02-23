@@ -1,5 +1,5 @@
 """
-File Manager for SentinelRAG Multimodal uploads.
+File Manager for Ultima_RAG Multimodal uploads.
 Handles partitioning of uploads by conversation_id and file type.
 """
 
@@ -128,3 +128,4 @@ def nuke_uploads() -> bool:
             logger.error(f"Failed to nuke uploads directory: {e}")
             return False
     return True
+

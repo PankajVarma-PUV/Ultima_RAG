@@ -1,5 +1,5 @@
 """
-Query Analyzer Agent for SentinelRAG
+Query Analyzer Agent for Ultima_RAG
 Transforms user queries into retrieval-optimized formats with intent detection.
 Uses local Ollama with configured model for LLM operations.
 """
@@ -190,3 +190,4 @@ def analyze_query(query: str) -> Dict:
     """Convenience function to analyze a query"""
     analyzer = get_query_analyzer()
     return analyzer.analyze(query)
+

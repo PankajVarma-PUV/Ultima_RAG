@@ -1,5 +1,5 @@
 """
-Utility functions for the SentinelRAG API.
+Utility functions for the Ultima_RAG API.
 Handles identity queries and streaming simulations.
 Cache-based duplicate query retrieval has been removed (intentionally).
 """
@@ -23,7 +23,7 @@ IDENTITY_KEYWORDS = [
 ]
 
 IDENTITY_RESPONSE = (
-    "I am **SentinelRAG**, an elite metacognitive intelligence system created by "
+    "I am **Ultima_RAG**, an elite metacognitive intelligence system created by "
     "**Pankaj Varma**.\n\n"
     "If you wish to connect with my creator, here are his contact details:\n\n"
     "📱 **WhatsApp / Telegram**: +91 9372123700\n\n"
@@ -33,7 +33,7 @@ IDENTITY_RESPONSE = (
 )
 
 def is_identity_query(query: str) -> bool:
-    """Check if query is asking about the creator/owner of SentinelRAG."""
+    """Check if query is asking about the creator/owner of Ultima_RAG."""
     q = query.strip().lower()
     return any(kw in q for kw in IDENTITY_KEYWORDS)
 
@@ -49,3 +49,4 @@ async def simulate_streaming(text: str, delay: float = 0.02):
         token = word if i == 0 else ' ' + word
         yield f"data: {json.dumps({'stage': 'streaming', 'token': token}, ensure_ascii=False)}\n\n"
         await asyncio.sleep(delay)
+

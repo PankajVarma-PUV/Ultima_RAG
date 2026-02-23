@@ -1,5 +1,5 @@
 """
-Document Chunking Module for SentinelRAG
+Document Chunking Module for Ultima_RAG
 Implements semantic, fixed-size, and paragraph-based chunking strategies using tokens.
 """
 
@@ -316,3 +316,4 @@ class DocumentChunker:
         
         logger.info(f"Total chunks from {len(documents)} documents: {len(all_chunks)}")
         return all_chunks
+

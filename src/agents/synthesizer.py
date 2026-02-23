@@ -1,5 +1,5 @@
 """
-Synthesis Agent for SentinelRAG
+Synthesis Agent for Ultima_RAG
 Generates answers strictly from provided context with citations.
 Uses local Ollama with Config-defined model for LLM operations.
 """
@@ -309,3 +309,4 @@ def synthesize_answer(
     """Convenience function to synthesize an answer"""
     synthesizer = get_synthesizer()
     return synthesizer.synthesize(query, chunks)
+

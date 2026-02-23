@@ -8,7 +8,7 @@ import re  # SOTA RE-Requirement
 from datetime import datetime
 
 from ..core.utils import logger
-from ..core.database import SentinelRAGDatabase
+from ..core.database import Ultima_RAGDatabase
 from ..core.config import Config
 from ..core.memory import MemoryManager
 from .intent_classifier import IntentClassifier
@@ -29,7 +29,7 @@ class GeneralIntelligenceAgent:
     async def generate(self, query: str, history: List[Dict], check_abort_fn=None) -> str:
         prompt = f"""
 <role>
-You are the SentinelRAG Sage, an elite general intelligence core. Your purpose is to provide authoritative, factual, and deeply insightful answers using your internal cross-domain training.
+You are the Ultima_RAG Sage, an elite general intelligence core. Your purpose is to provide authoritative, factual, and deeply insightful answers using your internal cross-domain training.
 </role>
 
 <system_info>
@@ -52,7 +52,7 @@ OPERATIONAL MODE: INTERNAL_SAGE_REASONING
 4. TONE: Premium, helpful, and cinematic.
 </sage_mandates>
 
-SENTINELRAG RESPONSE:"""
+Ultima_RAG RESPONSE:"""
         
         response = ""
         async for chunk in self.llm.astream(prompt, config={"tags": ["general_synthesis"]}):
@@ -66,7 +66,7 @@ SENTINELRAG RESPONSE:"""
         
         # SOTA: Generate a brief reasoning trace
         reasoning = f"Generated general response using internal knowledge for query: {query}"
-        return clean_response.replace("SENTINELRAG RESPONSE:", "").strip(), reasoning
+        return clean_response.replace("Ultima_RAG RESPONSE:", "").strip(), reasoning
 
 class QueryReformulatorAgent:
     """Agent that rewrites ambiguous queries based on conversation history."""
@@ -80,7 +80,7 @@ class QueryReformulatorAgent:
         
         prompt = f"""
 <role>
-You are the SentinelRAG Query Architect. Your goal is to transform ambiguous user inputs into self-contained, high-fidelity search queries.
+You are the Ultima_RAG Query Architect. Your goal is to transform ambiguous user inputs into self-contained, high-fidelity search queries.
 </role>
 
 <conversation_pipeline>
@@ -121,7 +121,7 @@ class HistoryChroniclerAgent:
         
         prompt = f"""
 <role>
-You are the SentinelRAG Cinema Chronicler. Recap the conversation journey as a professional, warm, and elite historian.
+You are the Ultima_RAG Cinema Chronicler. Recap the conversation journey as a professional, warm, and elite historian.
 </role>
 
 <dataset_type>
@@ -142,7 +142,7 @@ Scope: {context_type}
 3. LANGUAGE LOCK: You MUST generate 100% of the chronicle in {target_language}.
 </chronicle_protocols>
 
-SENTINELRAG CHRONICLE:"""
+Ultima_RAG CHRONICLE:"""
         
         response = ""
         async for chunk in self.llm.astream(prompt, config={"tags": ["chronicler"]}):
@@ -154,12 +154,12 @@ SENTINELRAG CHRONICLE:"""
         # SOTA: Strip thinking block from user chronicle
         clean_response = re.sub(r'<thinking>[\s\S]*?</thinking>', '', response).strip()
         reasoning = f"Synthesized history chronicle for: {query}. Scope: {context_type}."
-        return clean_response.replace("SENTINELRAG CHRONICLE:", "").strip(), reasoning
+        return clean_response.replace("Ultima_RAG CHRONICLE:", "").strip(), reasoning
 
 # --- Graph State Definition ---
 
-class SentinelRAGState(TypedDict):
-    """The persistent state of the SentinelRAG Reasoning Loop (Elite SOTA)."""
+class Ultima_RAGState(TypedDict):
+    """The persistent state of the Ultima_RAG Reasoning Loop (Elite SOTA)."""
     query: str
     conversation_id: str
     project_id: str
@@ -192,16 +192,16 @@ class SentinelRAGState(TypedDict):
 
 class MetacognitiveBrain:
     """
-    SentinelRAG Metacognitive Core Engine.
+    Ultima_RAG Metacognitive Core Engine.
     
     SOTA STABLE PROTOCOLS:
-    1. PERSONA: 'SentinelRAG Sage' - Cinematic, Authoritative, yet Partner-Centric.
+    1. PERSONA: 'Ultima_RAG Sage' - Cinematic, Authoritative, yet Partner-Centric.
     2. CITATIONS: Suffix-Only Protocol [[FileName]]. NO narrative text wrapping.
     3. COGNITION: Mandatory <thinking> blocks for Chain-of-Thought transparency.
     4. ISOLATION: Strict conversation-scoped retrieval and persistence.
     """
     
-    def __init__(self, db: SentinelRAGDatabase, memory: MemoryManager, sqlite_db=None):
+    def __init__(self, db: Ultima_RAGDatabase, memory: MemoryManager, sqlite_db=None):
         self.db = db
         self.memory = memory
         # SQLite DatabaseManager — needed for scraped_content queries
@@ -259,7 +259,7 @@ class MetacognitiveBrain:
             logger.error(f"Persistence Error ({role}): {e}")
 
     def _build_graph(self):
-        builder = StateGraph(SentinelRAGState)
+        builder = StateGraph(Ultima_RAGState)
         
         # Add Nodes
         builder.add_node("extractor", self.run_extractor)
@@ -338,7 +338,7 @@ class MetacognitiveBrain:
 
     # --- Node Logic ---
 
-    async def run_extractor(self, state: SentinelRAGState) -> Dict:
+    async def run_extractor(self, state: Ultima_RAGState) -> Dict:
         """Unified Multimodal Fusion Extraction."""
         tid = telemetry.start_activity("Extractor", "Fusing multimodal evidence")
         # SOTA: Prioritize @mentions, then fallback to current turn's uploaded_files for isolation
@@ -351,7 +351,7 @@ class MetacognitiveBrain:
         telemetry.end_activity(tid)
         return {"unified_evidence": evidence.dict()}
 
-    async def route_intent(self, state: SentinelRAGState) -> Dict:
+    async def route_intent(self, state: Ultima_RAGState) -> Dict:
         """Wise Intent Routing."""
         tid = telemetry.start_activity("Router", "Classifying user intent")
         mentioned = state.get("mentioned_files", [])
@@ -365,7 +365,7 @@ class MetacognitiveBrain:
         telemetry.end_activity(tid, {"intent": str(intent), "language": target_language, "action": action_msg})
         return {"intent": intent, "context_rejected": context_rejected, "target_language": target_language, "thought": action_msg}
 
-    def decide_initial_path(self, state: SentinelRAGState) -> Literal["chronicler", "default"]:
+    def decide_initial_path(self, state: Ultima_RAGState) -> Literal["chronicler", "default"]:
         """Decides if the chronicler agent should be engaged based on intent."""
         intent = state.get("intent", "general_intelligence")
         intent_val = intent.value if hasattr(intent, "value") else str(intent)
@@ -374,7 +374,7 @@ class MetacognitiveBrain:
             return "chronicler"
         return "default"
 
-    async def create_execution_plan(self, state: SentinelRAGState) -> Dict:
+    async def create_execution_plan(self, state: Ultima_RAGState) -> Dict:
         """SOTA Multi-Stage Planning."""
         tid = telemetry.start_activity("Planner", "Creating execution DAG")
         from .fusion_extractor import UnifiedEvidenceState
@@ -384,7 +384,7 @@ class MetacognitiveBrain:
         telemetry.end_activity(tid, {"action": action_msg})
         return {"plan": plan.dict(), "thought": action_msg}
 
-    def decide_path(self, state: SentinelRAGState) -> Literal["perception", "rag", "direct"]:
+    def decide_path(self, state: Ultima_RAGState) -> Literal["perception", "rag", "direct"]:
         """
         Drives the conditional transition from planner/router.
         SOTA: Gates RAG/Perception based on actual availability of evidence.
@@ -457,7 +457,7 @@ class MetacognitiveBrain:
 
         return "direct"
 
-    async def evaluate_knowledge(self, state: SentinelRAGState) -> Dict:
+    async def evaluate_knowledge(self, state: Ultima_RAGState) -> Dict:
         """
         Elite Knowledge Evaluator.
         Requirement 2: Determine if answer should come from context or LLM memory.
@@ -568,7 +568,7 @@ class MetacognitiveBrain:
 
         eval_prompt = f"""
         <role>
-        You are the SentinelRAG Grounding Auditor. Your mission is to verify if a user's inquiry can be answered with 100% fidelity using the provided context.
+        You are the Ultima_RAG Grounding Auditor. Your mission is to verify if a user's inquiry can be answered with 100% fidelity using the provided context.
         </role>
 
         <inquiry>
@@ -682,7 +682,7 @@ class MetacognitiveBrain:
             telemetry.end_activity(tid, {"mode": "grounded_in_docs", "error": str(e)})
             return {"response_mode": "grounded_in_docs"}
 
-    async def initiate_direct_flow(self, state: SentinelRAGState) -> Dict:
+    async def initiate_direct_flow(self, state: Ultima_RAGState) -> Dict:
         """Requirement 5: Force LLM Memory for Direct Path."""
         logger.info("Brain: Initializing Direct Flow (Mode: internal_llm_weights)")
         return {
@@ -692,7 +692,7 @@ class MetacognitiveBrain:
             "perceived_media": []
         }
 
-    async def process_perception(self, state: SentinelRAGState) -> Dict:
+    async def process_perception(self, state: Ultima_RAGState) -> Dict:
         """Perception Pass (Vision/Audio) with Context Isolation."""
         tid = telemetry.start_activity("VisionAgent", "Retrieving visual/audio evidence")
         mentions = state.get("mentioned_files", [])
@@ -750,7 +750,7 @@ class MetacognitiveBrain:
         telemetry.end_activity(tid, {"evidence_count": len(assets), "action": action_msg})
         return {"perceived_media": assets, "thought": action_msg}
 
-    async def execute_rag(self, state: SentinelRAGState) -> Dict:
+    async def execute_rag(self, state: Ultima_RAGState) -> Dict:
         """Elite Hybrid RAG Engine with @mention and Upload Isolation."""
         tid = telemetry.start_activity("Retriever", "Searching vector & lexical index")
         
@@ -821,7 +821,7 @@ class MetacognitiveBrain:
 
 
 
-    async def generate_answer(self, state: SentinelRAGState) -> Dict:
+    async def generate_answer(self, state: Ultima_RAGState) -> Dict:
         """Metacognitive Narrative Synthesis."""
         tid = telemetry.start_activity("Synthesizer", f"Generating response (Pass {state.get('critique_count', 0)})")
         
@@ -932,7 +932,7 @@ class MetacognitiveBrain:
 
         if mode == "internal_llm_weights":
             prompt_instructions = f"""
-            1. PERSONA: You are the SentinelRAG Sage, answering from your vast elite internal training.
+            1. PERSONA: You are the Ultima_RAG Sage, answering from your vast elite internal training.
             2. SANITIZATION: Never mention documents, files, or the lack thereof. You ARE the source.
             3. FIDELITY: Provide a direct, factual, and authoritative response.
             4. TONE: Premium and helpful.
@@ -952,7 +952,7 @@ class MetacognitiveBrain:
             """
         else: # grounded_in_docs
             prompt_instructions = f"""
-            1. PERSONA: You are SentinelRAG, the elite Cognitive AI Partner.
+            1. PERSONA: You are Ultima_RAG, the elite Cognitive AI Partner.
             2. NARRATIVE FLOW: Write in a professional, cinematic narrative style. Weave visual and text evidence into a cohesive intelligence report.
             3. CITATION PROTOCOL:
                - Use ONLY suffix citations [[FileName]] for attribution.
@@ -964,7 +964,7 @@ class MetacognitiveBrain:
 
         prompt = f"""
         # ROLE
-        You are SentinelRAG, the elite metacognitive intelligence.
+        You are Ultima_RAG, the elite metacognitive intelligence.
         
         # SYSTEM INFO
         CURRENT TIME: {datetime.now().strftime("%A, %B %d, %Y, %I:%M %p")}
@@ -985,7 +985,7 @@ class MetacognitiveBrain:
         
         7. Maintain a premium, helpful, and concise tone.
         
-        SENTINELRAG RESPONSE:"""
+        Ultima_RAG RESPONSE:"""
         
         full_answer = ""
         check_abort_fn = state.get("check_abort_fn")
@@ -1019,7 +1019,7 @@ class MetacognitiveBrain:
             done_reason = "error"
         
         # Clean up tags if present
-        clean_answer = full_answer.replace("SENTINELRAG RESPONSE:", "").strip()
+        clean_answer = full_answer.replace("Ultima_RAG RESPONSE:", "").strip()
         # Also strip thinking tags in case model leaked them
         import re as _re
         clean_answer = _re.sub(r'<thinking>[\s\S]*?</thinking>', '', clean_answer).strip()
@@ -1028,13 +1028,13 @@ class MetacognitiveBrain:
         reasoning = f"Generated {mode} response (Single-Shot). Done reason: {done_reason}."
         return {"answer": clean_answer, "reasoning": reasoning, "status": "SYNTHESIZED"}
 
-    async def run_general_synthesis(self, state: SentinelRAGState) -> Dict:
+    async def run_general_synthesis(self, state: Ultima_RAGState) -> Dict:
         """Route to General Intelligence Agent."""
         tid = telemetry.start_activity("GeneralSynthesis", "Synthesizing general response")
         answer, reasoning = await self.general_agent.generate(state["query"], state["history"], check_abort_fn=state.get("check_abort_fn"))
         telemetry.end_activity(tid)
         return {"answer": answer, "reasoning": reasoning, "status": "SYNTHESIZED"}
-    async def self_critique(self, state: SentinelRAGState) -> Dict:
+    async def self_critique(self, state: Ultima_RAGState) -> Dict:
         """Internal Critic & Hallucination Filter."""
         logger.info(f"Brain Node: Critic - Verifying Grounds... (State Keys: {list(state.keys())})")
         
@@ -1102,7 +1102,7 @@ class MetacognitiveBrain:
             "metadata": {"check": check_result, "reflection": reflection}
         }
 
-    def verify_grounding(self, state: SentinelRAGState) -> Literal["improve", "finish"]:
+    def verify_grounding(self, state: Ultima_RAGState) -> Literal["improve", "finish"]:
         """Metacognitive Flow Control."""
         # SOTA: Use centralized Support Threshold for routing decisions
         from ..core.config import FactCheckConfig
@@ -1110,7 +1110,7 @@ class MetacognitiveBrain:
             return "improve"
         return "finish"
 
-    async def run_healer(self, state: SentinelRAGState) -> Dict:
+    async def run_healer(self, state: Ultima_RAGState) -> Dict:
         """Hallucination Healing Loop wrapper."""
         tid = telemetry.start_activity("Healer", "Repairing groundedness gaps")
         result = await self.heal_response(state)
@@ -1119,14 +1119,14 @@ class MetacognitiveBrain:
 
     # --- SOTA History Reasoning Nodes ---
 
-    async def reformulate_query(self, state: SentinelRAGState) -> Dict:
+    async def reformulate_query(self, state: Ultima_RAGState) -> Dict:
         """Node to rewrite ambiguous history queries."""
         tid = telemetry.start_activity("Reformulator", "Resolving query ambiguity")
         search_query = await self.reformulator.reformulate(state["query"], state["history"])
         telemetry.end_activity(tid, {"reformulated": search_query})
         return {"search_query": search_query}
 
-    async def retrieve_full_history(self, state: SentinelRAGState) -> Dict:
+    async def retrieve_full_history(self, state: Ultima_RAGState) -> Dict:
         """Node to fetch relevant conversation timeline (Semantic or Full)."""
         tid = telemetry.start_activity("Recall", "Retrieving conversation timeline")
         
@@ -1152,7 +1152,7 @@ class MetacognitiveBrain:
             telemetry.end_activity(tid, {"type": "semantic", "matches": len(semantic_history)})
             return {"full_history": fused, "metadata": {"is_topic_specific": True}}
 
-    async def chronicler(self, state: SentinelRAGState) -> Dict:
+    async def chronicler(self, state: Ultima_RAGState) -> Dict:
         """Node for humanized history synthesis."""
         tid = telemetry.start_activity("Chronicler", "Synthesizing humanized history summary")
         is_topic_specific = state.get("metadata", {}).get("is_topic_specific", False)
@@ -1166,7 +1166,7 @@ class MetacognitiveBrain:
         telemetry.end_activity(tid)
         return {"answer": summary, "reasoning": reasoning, "status": "CHRONICLED"}
 
-    async def heal_response(self, state: SentinelRAGState) -> Dict:
+    async def heal_response(self, state: Ultima_RAGState) -> Dict:
         """Hallucination Healing Logic."""
         metadata = state.get("metadata", {})
         # SOTA FIX: Sync with FactChecker's output keys
@@ -1216,7 +1216,7 @@ class MetacognitiveBrain:
         
         return {"answer": healed_answer, "reasoning": reasoning, "status": "HEALED", "thought": action_msg}
 
-    async def apply_ui_hints(self, state: SentinelRAGState) -> Dict:
+    async def apply_ui_hints(self, state: Ultima_RAGState) -> Dict:
         """Adaptive Resonance UI Theming."""
         mapping = {
             "multimodal_analysis": "#8B5CF6", # Purple
@@ -1289,7 +1289,7 @@ class MetacognitiveBrain:
         # SOTA: get_prompt_context handles the paging/recall logic
         history = self.memory.get_prompt_context(conversation_id) if hasattr(self.memory, 'get_prompt_context') else []
         
-        initial_state: SentinelRAGState = {
+        initial_state: Ultima_RAGState = {
             "query": query,
             "conversation_id": conversation_id,
             "project_id": project_id,
@@ -1497,3 +1497,4 @@ class MetacognitiveBrain:
             },
             "database_sync": "active"
         }
+

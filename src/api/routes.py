@@ -1,5 +1,5 @@
 """
-API Routes for SentinelRAG
+API Routes for Ultima_RAG
 Additional route handlers and utilities.
 """
 
@@ -150,3 +150,4 @@ async def get_metrics():
         "avg_latency_ms": 0,
         "refusal_rate": 0
     }
+

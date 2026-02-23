@@ -1,5 +1,5 @@
 """
-Fact Checker Agent for SentinelRAG
+Fact Checker Agent for Ultima_RAG
 Validates synthesized answers against retrieved evidence using NLI.
 Uses local Ollama with configured model for LLM operations.
 """
@@ -438,3 +438,4 @@ def check_facts(
     """Convenience function to check facts"""
     checker = get_fact_checker()
     return checker.check_facts(synthesis_output, source_chunks)
+

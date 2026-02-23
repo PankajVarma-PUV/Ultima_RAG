@@ -1,5 +1,5 @@
 """
-SentinelRAG Conversation-to-PDF Exporter
+Ultima_RAG Conversation-to-PDF Exporter
 Generates structured PDF documents from conversation history with full Unicode support.
 """
 
@@ -15,7 +15,7 @@ from .utils import logger
 
 
 class ConversationPDF(FPDF):
-    """SOTA Custom PDF generator with SentinelRAG branding and Unicode support."""
+    """SOTA Custom PDF generator with Ultima_RAG branding and Unicode support."""
 
     def __init__(self):
         super().__init__()
@@ -40,8 +40,8 @@ class ConversationPDF(FPDF):
         # Professional Minimalist Header
         self.set_xy(10, 10)
         self.set_font('NirmalaUI' if self._has_unicode_font else 'Helvetica', 'B', 14)
-        self.set_text_color(6, 182, 212) # Sentinel Cyan
-        self.cell(0, 10, 'SENTINEL RAG | INTELLIGENCE EXPORT', align='L')
+        self.set_text_color(6, 182, 212) # Ultima Cyan
+        self.cell(0, 10, 'Ultima RAG | INTELLIGENCE EXPORT', align='L')
         
         self.set_font('NirmalaUI' if self._has_unicode_font else 'Helvetica', '', 8)
         self.set_text_color(148, 163, 184) # Slate 400
@@ -57,7 +57,7 @@ class ConversationPDF(FPDF):
         self.set_y(-15)
         self.set_font('NirmalaUI' if self._has_unicode_font else 'Helvetica', 'I', 8)
         self.set_text_color(100, 116, 139)
-        self.cell(0, 10, f'Authenticated SentinelRAG Document - Page {self.page_no()}/{{nb}}', align='C')
+        self.cell(0, 10, f'Authenticated Ultima_RAG Document - Page {self.page_no()}/{{nb}}', align='C')
 
     def render_chat_bubble(self, role: str, content: str, metadata: Dict = None):
         """Render a premium chat bubble style message."""
@@ -74,7 +74,7 @@ class ConversationPDF(FPDF):
         # 1. Header (Label)
         self.set_font(font_main, 'B', 9)
         self.set_text_color(*label_color)
-        icon = "👤 USER" if is_user else "🤖 SENTINEL AI"
+        icon = "👤 USER" if is_user else "🤖 Ultima AI"
         self.cell(0, 8, icon, ln=1)
         
         # 2. Bubble Body logic using MultiCell for wrapping
@@ -130,7 +130,7 @@ def generate_conversation_pdf(
     font_main = 'NirmalaUI' if pdf._has_unicode_font else 'Helvetica'
 
     # --- Cover Section ---
-    title = conversation.get('title') or 'SentinelRAG Intelligence Log'
+    title = conversation.get('title') or 'Ultima_RAG Intelligence Log'
     pdf.set_font(font_main, 'B', 24)
     pdf.set_text_color(15, 23, 42)
     pdf.multi_cell(0, 15, title.upper(), align='L')
@@ -265,7 +265,7 @@ def generate_query_pdf(
     response: str,
     conversation_id: str,
     mentioned_files: Optional[List[str]] = None,
-    conversation_title: str = "SentinelRAG Intelligence Export"
+    conversation_title: str = "Ultima_RAG Intelligence Export"
 ) -> bytes:
     """
     Generate a branded, Unicode-capable PDF for a specific query and its AI response.
@@ -311,7 +311,7 @@ def generate_query_pdf(
     # ── AI Response Block ────────────────────────────────────────────────────
     pdf.set_font(font_main, 'B', 10)
     pdf.set_text_color(6, 182, 212)
-    pdf.cell(0, 7, "🤖  SENTINELRAG AI RESPONSE", ln=1)
+    pdf.cell(0, 7, "🤖  Ultima_RAG AI RESPONSE", ln=1)
 
     pdf.set_draw_color(6, 182, 212)
     pdf.set_line_width(0.1)
@@ -332,6 +332,7 @@ def generate_query_pdf(
 
     pdf.set_font(font_main, 'I', 8)
     pdf.set_text_color(148, 163, 184)
-    pdf.cell(0, 5, f"Certified SentinelRAG Intelligence Document  |  Generated: {now_str}", ln=1, align='C')
+    pdf.cell(0, 5, f"Certified Ultima_RAG Intelligence Document  |  Generated: {now_str}", ln=1, align='C')
 
     return pdf.output()
+

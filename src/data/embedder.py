@@ -1,5 +1,5 @@
 """
-Embedding Module for SentinelRAG
+Embedding Module for Ultima_RAG
 Deterministic embedder with caching for reproducible retrieval.
 """
 
@@ -241,3 +241,4 @@ def embed_chunks(
     
     logger.info(f"Added embeddings to {len(chunks)} chunks")
     return chunks
+

@@ -1,5 +1,5 @@
 """
-Manager for Multimodal processing in SentinelRAG.
+Manager for Multimodal processing in Ultima_RAG.
 Orchestrates between Image, Audio, and Video pipelines.
 """
 
@@ -182,3 +182,4 @@ class MultimodalManager:
 
         except Exception as e:
             logger.error(f"❌ Background Enrichment failed for {file_name}: {e}")
+

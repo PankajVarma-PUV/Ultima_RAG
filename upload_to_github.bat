@@ -1,14 +1,30 @@
 @echo off
+:: UltimaRAG — Multi-Agent RAG System
+:: Copyright (C) 2026 Pankaj Varma
+::
+:: This program is free software: you can redistribute it and/or modify
+:: it under the terms of the GNU Affero General Public License as published by
+:: the Free Software Foundation, either version 3 of the License, or
+:: (at your option) any later version.
+::
+:: This program is distributed in the hope that it will be useful,
+:: but WITHOUT ANY WARRANTY; without even the implied warranty of
+:: MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+:: GNU Affero General Public License for more details.
+::
+:: You should have received a copy of the GNU Affero General Public License
+:: along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 SETLOCAL EnableDelayedExpansion
 
 :: --- CONFIGURATION ---
-SET REPO_URL=https://github.com/PankajVarma-PUV/SentinelRAG.git
+SET REPO_URL=https://github.com/PankajVarma-PUV/Ultima_RAG.git
 SET BRANCH=main
 
 :: Use UTF-8 for better character support in modern CMD/PowerShell
 chcp 65001 >nul
 
-echo 🛡️ SentinelRAG GitHub Recovery Uploader
+echo 🛡️ Ultima_RAG GitHub Recovery Uploader
 echo ---------------------------------------
 
 :: 1. Force Cleanup of any stuck background processes
@@ -34,7 +50,7 @@ git add -A
 
 :: 5. Commit with robust quoting
 SET /P commit_msg="💬 Enter commit message (or press enter for default): "
-if "%commit_msg%"=="" SET commit_msg=Finalized SOTA SentinelRAG Architecture
+if "%commit_msg%"=="" SET commit_msg=Finalized SOTA Ultima_RAG Architecture
 
 echo 💾 Committing...
 git commit -m "%commit_msg%"
@@ -51,7 +67,7 @@ git push -u origin %BRANCH% --force
 if %errorlevel% equ 0 (
     echo ---------------------------------------
     echo ✅ SUCCESS! Your entire LOCAL codebase is now live on GitHub.
-    echo 🌐 Visit: https://github.com/PankajVarma-PUV/SentinelRAG
+    echo 🌐 Visit: https://github.com/PankajVarma-PUV/Ultima_RAG
 ) else (
     echo -----------------------------------
     echo ❌ FAILED to push. 
@@ -59,3 +75,4 @@ if %errorlevel% equ 0 (
 )
 
 pause
+

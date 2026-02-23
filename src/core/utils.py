@@ -1,5 +1,5 @@
 """
-Utility Functions for SentinelRAG
+Utility Functions for Ultima_RAG
 Common utilities including deterministic mode, logging, and text processing.
 """
 
@@ -28,7 +28,7 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
     logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     
-    return logging.getLogger('SentinelRAG')
+    return logging.getLogger('Ultima_RAG')
 
 
 logger = setup_logging()
@@ -230,3 +230,4 @@ def test_determinism() -> bool:
     
     logger.info("✓ Determinism verification passed")
     return True
+

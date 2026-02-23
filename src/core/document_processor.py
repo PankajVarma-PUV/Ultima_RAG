@@ -6,7 +6,7 @@ from .utils import logger
 from .file_manager import ensure_chat_dir
 
 class DocumentProcessor:
-    """SOTA Document Processor for SentinelRAG. Extracts text and images from PDFs."""
+    """SOTA Document Processor for Ultima_RAG. Extracts text and images from PDFs."""
     
     @staticmethod
     def extract_from_pdf(conversation_id: str, file_path: str, file_name: str) -> Tuple[str, List[str]]:
@@ -84,3 +84,4 @@ class DocumentProcessor:
             logger.error(f"Failed to process PDF {file_name}: {e}")
             
         return full_text, image_paths
+

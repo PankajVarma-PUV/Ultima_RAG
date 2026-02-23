@@ -1,5 +1,5 @@
 """
-Content Enricher Agent for SentinelRAG.
+Content Enricher Agent for Ultima_RAG.
 Transforms raw extraction data into high-fidelity enriched narratives.
 Single Source of Truth (SSOT) Implementation.
 """
@@ -11,7 +11,7 @@ from ..core.utils import logger, Timer
 from ..core.config import Config
 
 ENRICHMENT_PROMPTS = {
-    "image": """You are **SentinelRAG's Knowledge Base Architect**.
+    "image": """You are **Ultima_RAG's Knowledge Base Architect**.
     
 RAW PERCEPTION DATA (OCR + VISION):
 {raw_content}
@@ -27,7 +27,7 @@ INSTRUCTIONS:
 
 OUTPUT: A definitive, well-structured knowledge segment capturing the totality of the asset.""",
 
-    "video": """You are **SentinelRAG's Multi-Modal Intelligence Fusion Agent**.
+    "video": """You are **Ultima_RAG's Multi-Modal Intelligence Fusion Agent**.
 
 RAW MULTIMODAL DATA (WHISPER AUDIO + QWEN VISUAL + OCR):
 {raw_content}
@@ -58,7 +58,7 @@ INSTRUCTIONS:
 
 OUTPUT: The definitive, enriched, and structured version of the document.""",
 
-    "audio": """You are **SentinelRAG's Senior Audio Intelligence Analyst**.
+    "audio": """You are **Ultima_RAG's Senior Audio Intelligence Analyst**.
 
 RAW TRANSCRIPTION INSIGHTS:
 {raw_content}
@@ -146,3 +146,4 @@ class ContentEnricher:
             except Exception as e:
                 logger.error(f"Enrichment failed for {file_name}: {e}")
                 return raw_content # Fallback to original content on failure
+

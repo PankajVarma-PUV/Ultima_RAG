@@ -1,1 +1,2 @@
-# SentinelRAG - Multi-Agent RAG System
+# Ultima_RAG - Multi-Agent RAG System
+

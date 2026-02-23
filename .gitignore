@@ -9,7 +9,7 @@ venv/
 
 # Project Specific Data & Models
 data/uploads/
-data/sentinel_db/
+data/Ultima_db/
 data/embeddings/
 data/processed/
 data/raw/

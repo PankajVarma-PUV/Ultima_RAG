@@ -1,5 +1,5 @@
 """
-Image Processor for SentinelRAG (Upgraded to SentinelRAG Elite).
+Image Processor for Ultima_RAG (Upgraded to Ultima_RAG Elite).
 Handles image preprocessing, OCR, and SOTA vision perception.
 
 SOTA Features:
@@ -42,11 +42,11 @@ class ImageProcessor:
                 logger.info("Initializing EasyOCR reader...")
                 # Enable GPU acceleration only if CUDA is available
                 # Logic: We use the same 'Force GPU' logic if set in environment
-                force_gpu = os.getenv("SENTINEL_FORCE_GPU", "false").lower() == "true"
+                force_gpu = os.getenv("Ultima_FORCE_GPU", "false").lower() == "true"
                 cuda_available = torch.cuda.is_available() or force_gpu
                 
                 if not torch.cuda.is_available() and force_gpu:
-                    logger.warning("EasyOCR: SENTINEL_FORCE_GPU is ON. Attempting GPU loading despite CUDA reporting False.")
+                    logger.warning("EasyOCR: Ultima_FORCE_GPU is ON. Attempting GPU loading despite CUDA reporting False.")
                 
                 self.ocr_reader = easyocr.Reader(['en'], gpu=cuda_available)
                 logger.info(f"EasyOCR reader initialized (GPU={cuda_available})")
@@ -60,7 +60,7 @@ class ImageProcessor:
 
     async def _process_tiled(self, img: Image.Image) -> str:
         """
-        SOTA Tiled Perception (SentinelRAG Guard).
+        SOTA Tiled Perception (Ultima_RAG Guard).
         Splits image into 2x2 grid and processes tiles SEQUENTIALLY to save VRAM.
         """
         w, h = img.size
@@ -174,3 +174,4 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Image Pipeline failed: {e}")
             return [{"content": f"Critical Error: {str(e)}", "sub_type": "image"}]
+

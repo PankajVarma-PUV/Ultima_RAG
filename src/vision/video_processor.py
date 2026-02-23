@@ -1,5 +1,5 @@
 """
-Video Processor for SentinelRAG.
+Video Processor for Ultima_RAG.
 Orchestrates frame extraction, OCR, vision perception, audio transcription,
 and LongT5 deduplication for video content.
 
@@ -76,7 +76,7 @@ class VideoProcessor:
         3. OCR & Vision Perception on Significant Frames
         4. Unified Audio-Visual Narrative Fusion (Config-defined LLM)
         """
-        logger.info(f"🚀 SentinelRAG Video Pipeline: {os.path.basename(file_path)}")
+        logger.info(f"🚀 Ultima_RAG Video Pipeline: {os.path.basename(file_path)}")
         scraped_items = []
         
         try:
@@ -156,3 +156,4 @@ class VideoProcessor:
         except Exception as e:
             logger.error(f"Video pipeline failed: {e}")
             return [{"content": f"Video Error: {str(e)}", "sub_type": "video_visual"}]
+

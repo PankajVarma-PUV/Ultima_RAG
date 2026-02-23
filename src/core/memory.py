@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 from datetime import datetime
-from .database import SentinelRAGDatabase
+from .database import Ultima_RAGDatabase
 from .config import Config
 from .utils import logger
 
@@ -16,12 +16,12 @@ from .utils import logger
 
 class MemoryManager:
     """
-    SentinelRAG Memory Manager (MemGPT implementation).
+    Ultima_RAG Memory Manager (MemGPT implementation).
     Controls the 'Virtual Context' by paging messages in and out of the LLM window.
     Tuned for Gemma3:12b with a 2048-token total context window.
     """
 
-    def __init__(self, db: SentinelRAGDatabase):
+    def __init__(self, db: Ultima_RAGDatabase):
         self.db = db
         # MemGPT Overflow Threshold — derived from Config.memgpt so it auto-scales
         # with MAX_INPUT_TOKENS when you upgrade hardware via .env
@@ -182,3 +182,4 @@ Summary:"""
                 })
         
         return recalled_context
+

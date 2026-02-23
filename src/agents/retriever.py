@@ -4,18 +4,18 @@ import json
 from datetime import datetime
 
 from ..core.utils import logger, Timer
-from ..core.database import SentinelRAGDatabase
+from ..core.database import Ultima_RAGDatabase
 from ..data.embedder import DeterministicEmbedder, get_embedder
 
 class RetrieverAgent:
     """
-    SOTA Retriever Agent for SentinelRAG.
+    SOTA Retriever Agent for Ultima_RAG.
     Utilizes LanceDB for project-aware, vector-native retrieval.
     """
     
     def __init__(
         self,
-        db: SentinelRAGDatabase,
+        db: Ultima_RAGDatabase,
         embedder: Optional[DeterministicEmbedder] = None
     ):
         from ..core.config import RerankerConfig
@@ -32,7 +32,7 @@ class RetrieverAgent:
             logger.error(f"Failed to initialize reranker {RerankerConfig.MODEL_NAME}: {e}")
             self.reranker = None
             
-        logger.info(f"RetrieverAgent (SentinelRAG Edition) initialized | Reranker: {RerankerConfig.MODEL_NAME}")
+        logger.info(f"RetrieverAgent (Ultima_RAG Edition) initialized | Reranker: {RerankerConfig.MODEL_NAME}")
     
     async def retrieve(
         self,
@@ -52,7 +52,7 @@ class RetrieverAgent:
         # SOTA: Respect .env-driven global chunk limit if not overridden
         top_k = top_k or Config.retrieval.FINAL_TOP_K
 
-        with Timer("SentinelRAG Retrieval + Rerank"):
+        with Timer("Ultima_RAG Retrieval + Rerank"):
             # 1. Generate Query Embedding
             query_vector = self.embedder.encode(query).tolist()
             
@@ -160,3 +160,4 @@ class RetrieverAgent:
         
         logger.info(f"Retriever: Found evidence for {len(assets)} files. Total items: {len(evidence)}")
         return evidence
+

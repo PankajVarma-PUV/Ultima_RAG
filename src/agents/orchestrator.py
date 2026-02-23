@@ -30,7 +30,7 @@ class AgentOrchestrator:
 
     def __init__(self, *args, **kwargs):
         raise DeprecationWarning(
-            "[SentinelRAG] AgentOrchestrator is retired and must not be used. "
+            "[Ultima_RAG] AgentOrchestrator is retired and must not be used. "
             "Use MetacognitiveBrain from src.agents.metacognitive_brain instead."
         )
 
@@ -40,8 +40,9 @@ class AgentOrchestrator:
 
 # Emit a warning if this module is ever imported at the top level
 warnings.warn(
-    "[SentinelRAG] orchestrator.py is a retired legacy module. "
+    "[Ultima_RAG] orchestrator.py is a retired legacy module. "
     "The active pipeline is MetacognitiveBrain (metacognitive_brain.py).",
     DeprecationWarning,
     stacklevel=2
 )
+

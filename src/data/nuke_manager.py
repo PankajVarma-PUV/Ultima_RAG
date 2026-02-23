@@ -1,5 +1,5 @@
 """
-Nuke Manager for SentinelRAG
+Nuke Manager for Ultima_RAG
 Coordinates full-system factory resets across all data layers.
 """
 
@@ -50,3 +50,4 @@ class NukeManager:
             import traceback
             traceback.print_exc()
             return False, str(e)
+

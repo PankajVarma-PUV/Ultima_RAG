@@ -1,3 +1,19 @@
+# UltimaRAG — Multi-Agent RAG System
+# Copyright (C) 2026 Pankaj Varma
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import lancedb
 import pyarrow as pa
 from pathlib import Path
@@ -146,9 +162,9 @@ SCHEMA_REGISTRY = {
     ])
 }
 
-class SentinelRAGDatabase:
+class Ultima_RAGDatabase:
     """
-    SOTA Database Layer for SentinelRAG using LanceDB.
+    SOTA Database Layer for Ultima_RAG using LanceDB.
     Supports hierarchical organization (Projects/Folders) and Vector-native storage.
     
     INTEGRITY STANDARDS:
@@ -158,7 +174,7 @@ class SentinelRAGDatabase:
     """
     
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or Config.paths.SENTINEL_DB_DIR
+        self.db_path = db_path or Config.paths.Ultima_DB_DIR
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = lancedb.connect(str(self.db_path))
         self._initialize_tables()
@@ -1364,12 +1380,13 @@ class SentinelRAGDatabase:
 _db_instance = None
 _db_lock = threading.Lock()
 
-def get_database() -> SentinelRAGDatabase:
-    """Get or create singleton SentinelRAGDatabase instance with thread safety."""
+def get_database() -> Ultima_RAGDatabase:
+    """Get or create singleton Ultima_RAGDatabase instance with thread safety."""
     global _db_instance
     if _db_instance is None:
         with _db_lock:
             # Double-check pattern
             if _db_instance is None:
-                _db_instance = SentinelRAGDatabase()
+                _db_instance = Ultima_RAGDatabase()
     return _db_instance
+

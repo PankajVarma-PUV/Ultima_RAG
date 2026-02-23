@@ -1,5 +1,5 @@
 """
-Database Module for SentinelRAG
+Database Module for Ultima_RAG
 Supports both SQLite (local, zero-config) and PostgreSQL (cloud).
 Database type is selected via DB_TYPE environment variable.
 """
@@ -125,9 +125,9 @@ class SQLiteDatabase(BaseDatabase):
         Initialize SQLite database.
         
         Args:
-            db_path: Path to SQLite database file. Defaults to data/sentinelrag.db
+            db_path: Path to SQLite database file. Defaults to data/Ultima_RAG.db
         """
-        default_path = Path(__file__).parent.parent.parent / "data" / "sentinelrag.db"
+        default_path = Path(__file__).parent.parent.parent / "data" / "Ultima_RAG.db"
         self.db_path = Path(db_path) if db_path else default_path
         self._connection: Optional[sqlite3.Connection] = None
         self._connected = False
@@ -1203,3 +1203,4 @@ def init_database() -> bool:
         db.initialize_schema()
         return True
     return False
+

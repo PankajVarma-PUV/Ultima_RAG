@@ -1,5 +1,5 @@
 """
-Web Breakout Agent — SentinelRAG Live Web Search Tool
+Web Breakout Agent — Ultima_RAG Live Web Search Tool
 
 Uses DuckDuckGo (no API key) and Trafilatura (clean text extraction).
 Designed for 6GB VRAM systems: hard-truncates each source to 1000 chars.
@@ -119,3 +119,4 @@ def fallback_web_search(query: str, max_results: int = 2) -> str:
     except Exception as e:
         logger.error(f"[WebBreakoutAgent] Web search failed with exception: {e}")
         return []
+

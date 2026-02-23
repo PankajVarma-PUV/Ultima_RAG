@@ -1,9 +1,27 @@
+/*
+ * UltimaRAG — Multi-Agent RAG System
+ * Copyright (C) 2026 Pankaj Varma
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 /**
- * SentinelRAG SOTA Frontend Controller
+ * UltimaRAG SOTA Frontend Controller
  * Logic for Workspace Explorer, Generative UI, and Adaptive Resonance
  */
 
-class SentinelApp {
+class UltimaApp {
     constructor() {
         this.state = {
             activeProject: 'default',
@@ -97,7 +115,7 @@ class SentinelApp {
 
         // Auto-refresh status
         setInterval(() => this.updateSystemStatus(), 30000);
-        console.log("SentinelRAG Metacognitive Core Interface Active.");
+        console.log("Ultima_RAG Metacognitive Core Interface Active.");
     }
 
     setupEventListeners() {
@@ -282,7 +300,7 @@ class SentinelApp {
         this.chatLog.innerHTML = `
             <div class="max-w-3xl mx-auto bg-white/5 p-6 rounded-3xl border border-white/5 shadow-xl">
                 <div class="text-sm leading-relaxed">
-                    Welcome to <strong class="text-cyan-400">SentinelRAG</strong>. I am your metacognitive assistant.
+                    Welcome to <strong class="text-cyan-400">Ultima_RAG</strong>. I am your metacognitive assistant.
                     Upload documents or ask questions to begin reasoning with grounded evidence.
                 </div>
                 <div class="text-[10px] font-bold uppercase tracking-widest text-cyan-500/50 mt-4 flex items-center gap-2">
@@ -512,7 +530,7 @@ class SentinelApp {
             btn.classList.remove('web-toggle-active');
             btn.title = 'Web Search: OFF — enable to search the web as a fallback';
         }
-        console.log(`[SentinelRAG] Web Search toggle: ${this.state.webSearchEnabled ? 'ON' : 'OFF'}`);
+        console.log(`[Ultima_RAG] Web Search toggle: ${this.state.webSearchEnabled ? 'ON' : 'OFF'}`);
     }
 
     // --- Message Rendering ---
@@ -570,7 +588,7 @@ class SentinelApp {
                 const confPercent = Math.round(metadata.confidence_score * 100);
                 metaHtml = `
                 <div class="resonance-card">
-                    <div class="intent-pill">${metadata.intent || metadata.agent_type || 'SENTINEL'}</div>
+                    <div class="intent-pill">${metadata.intent || metadata.agent_type || 'Ultima'}</div>
                     <div class="text-[10px] font-bold opacity-40">Fidelity: ${confPercent}%</div>
                 </div>
             `;
@@ -661,7 +679,7 @@ class SentinelApp {
                         <span class="perception-tooltip-header">
                             <span class="flex items-center gap-2">
                                 <i class="fa-solid fa-eye text-[8px] animate-pulse"></i>
-                                <span>SENTINEL PERCEPTION: ${p.fileName}</span>
+                                <span>Ultima PERCEPTION: ${p.fileName}</span>
                             </span>
                         </span>
                         <span class="perception-tooltip-body">${tooltipContent}</span>
@@ -999,7 +1017,7 @@ class SentinelApp {
                                     this.hideUnifiedOverlay();
                                     this.showThinkingIndicator();
                                     this.showTelemetryHud();
-                                    this.updateTelemetry('SENTINEL', 'Starting Reasoning Analysis...');
+                                    this.updateTelemetry('Ultima', 'Starting Reasoning Analysis...');
                                 }
 
                             } else if (data.stage === 'workspace_updated') {
@@ -1117,7 +1135,7 @@ class SentinelApp {
                     confPercent = Math.round(data.confidence_score * 100);
                 }
 
-                const intent = data.intent || data.agent_type || (data.ui_hints ? data.ui_hints.intent : null) || 'SENTINEL';
+                const intent = data.intent || data.agent_type || (data.ui_hints ? data.ui_hints.intent : null) || 'Ultima';
 
                 metaContainer.innerHTML = `
                     <div class="resonance-card">
@@ -1559,7 +1577,7 @@ class SentinelApp {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Sentinel_Evidence_${sourceName.replace(/\.[^/.]+$/, "")}.pdf`;
+            a.download = `Ultima_Evidence_${sourceName.replace(/\.[^/.]+$/, "")}.pdf`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -1964,7 +1982,7 @@ class SentinelApp {
             a.href = url;
             const cd = resp.headers.get('Content-Disposition');
             const match = cd ? cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/) : null;
-            a.download = match ? match[1].replace(/['"]/g, '') : 'SentinelRAG_Conversation.pdf';
+            a.download = match ? match[1].replace(/['"]/g, '') : 'Ultima_RAG_Conversation.pdf';
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -2054,7 +2072,7 @@ class SentinelApp {
             a.href = url;
             const cd = resp.headers.get('Content-Disposition');
             const match = cd ? cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/) : null;
-            a.download = match ? match[1].replace(/['"]/g, '') : 'SentinelRAG_QueryExport.pdf';
+            a.download = match ? match[1].replace(/['"]/g, '') : 'Ultima_RAG_QueryExport.pdf';
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -2149,16 +2167,17 @@ function closeFileViewer() {
 }
 
 // SOTA Phase 4: Purge Level 10 (Cache Busting)
-const SENTINEL_VERSION = "4.0.0-REV-ULTRA";
+const Ultima_VERSION = "4.0.0-REV-ULTRA";
 
 window.addEventListener('load', () => {
-    console.log(`%c SENTINEL RAG CORE: ${SENTINEL_VERSION} ACTIVE %c`, "background:#00d9ff; color:#000; font-weight:bold; padding:4px;", "");
-    window.app = new SentinelApp();
+    console.log(`%c Ultima RAG CORE: ${Ultima_VERSION} ACTIVE %c`, "background:#00d9ff; color:#000; font-weight:bold; padding:4px;", "");
+    window.app = new UltimaApp();
 
     // Auto-purge old state if version mismatch detected (Simulated)
-    const lastVer = localStorage.getItem('sentinel_version');
-    if (lastVer !== SENTINEL_VERSION) {
-        console.warn("Sentinel: Version shift detected. Purging legacy cognitive cache.");
-        localStorage.setItem('sentinel_version', SENTINEL_VERSION);
+    const lastVer = localStorage.getItem('Ultima_version');
+    if (lastVer !== Ultima_VERSION) {
+        console.warn("Ultima: Version shift detected. Purging legacy cognitive cache.");
+        localStorage.setItem('Ultima_version', Ultima_VERSION);
     }
 });
+

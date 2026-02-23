@@ -24,7 +24,7 @@ def strip_mentions(query: str) -> str:
 
 class IntentClassifier:
     """
-    SOTA Wise Intent Router for SentinelRAG Metacognitive Brain.
+    SOTA Wise Intent Router for Ultima_RAG Metacognitive Brain.
     Classifies user intent into 4 buckets:
     - GENERAL: Chat, Translation, Knowledge
     - RAG: Document search
@@ -39,7 +39,7 @@ class IntentClassifier:
             base_url=Config.ollama.BASE_URL,
             timeout=Config.ollama.TIMEOUT
         )
-        logger.info("Wise Intent Router (SentinelRAG Edition) initialized")
+        logger.info("Wise Intent Router (Ultima_RAG Edition) initialized")
     
     async def classify(self, query: str, mentioned_files: list = None) -> tuple:
         """
@@ -79,7 +79,7 @@ class IntentClassifier:
 
         prompt = f"""
 <role>
-You are the SentinelRAG Wise Intent Router. Classify inquiries into the most efficient processing pipeline with high-fidelity calibration.
+You are the Ultima_RAG Wise Intent Router. Classify inquiries into the most efficient processing pipeline with high-fidelity calibration.
 </role>
 
 <taxonomy>
@@ -150,3 +150,4 @@ INTENT JSON:"""
                 logger.info(f"Intent: Explicit context rejection detected in query: '{query}'")
                 return True
         return False
+

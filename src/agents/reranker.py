@@ -1,5 +1,5 @@
 """
-Reranker Module for SentinelRAG
+Reranker Module for Ultima_RAG
 Cross-encoder reranking for precision filtering.
 """
 
@@ -186,3 +186,4 @@ def rerank_chunks(
     reranker = get_reranker(threshold, top_k)
     result = reranker.rerank(query, chunks, threshold, top_k)
     return result["reranked_chunks"]
+
