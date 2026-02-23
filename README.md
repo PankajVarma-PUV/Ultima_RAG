@@ -42,8 +42,9 @@ UltimaRAG is designed to be run **locally** to ensure complete data privacy and 
 
 UltimaRAG features a **Smart setup script** that automatically detects your hardware (NVIDIA GPU vs CPU) and installs the correct ML stack for you.
 
-#### Method 1: One-Click Installation (Recommended)
-Simply download and run the **`clone_UltimaRAG.bat`** file. This script will automatically clone the repository, set up the environment, and launch the application for you.
+#### Method 1: Streamlined Setup (Recommended)
+1. Download and run the **`clone_UltimaRAG.bat`** file. This script will automatically clone the repository for you.
+2. Enter the new `UltimaRAG` folder and run **`Run_UltimaRAG.bat`** to set up the environment and launch the application.
 
 #### Method 2: Manual Installation
 1.  **Clone the repository**:
