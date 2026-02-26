@@ -51,8 +51,8 @@ class VideoProcessor:
             try:
                 import easyocr
                 logger.info("Initializing EasyOCR reader...")
-                # English only, CPU bound as per 6GB constraint
-                self._ocr_reader = easyocr.Reader(['en'], gpu=False)
+                # SOTA: Multi-language 'Global Core' configuration (CPU bound as per 6GB constraint)
+                self._ocr_reader = easyocr.Reader(['en', 'fr', 'es', 'de', 'ch_sim', 'ch_tra', 'ja', 'ko', 'hi', 'ar', 'ru', 'it', 'pt'], gpu=False)
             except ImportError:
                 logger.warning("easyocr not installed. OCR stage will be skipped.")
         return self._ocr_reader

@@ -41,7 +41,7 @@ class MultiStagePlanner:
     def __init__(self):
         from ..core.config import Config
         self.llm = Ollama(
-            model=Config.ollama_multi_model.HEAVY_MODEL,
+            model=Config.ollama_multi_model.AGENT_MODELS.get("planner", Config.ollama_multi_model.HEAVY_MODEL),
             base_url=Config.ollama.BASE_URL,
             timeout=Config.ollama.TIMEOUT
         )

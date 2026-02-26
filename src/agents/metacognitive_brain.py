@@ -1016,19 +1016,19 @@ class MetacognitiveBrain:
         client = get_ollama_client()
         
         try:
-            result = client.generate(
-                prompt,
-                temperature=0.0,
-                max_tokens=Config.ollama_multi_model.HEAVY_MAX_TOKENS,
-                stream=False
-            )
-            if check_abort_fn and check_abort_fn():
-                full_answer = ""
-            else:
-                full_answer = result.get("response", "")
-                done_reason = result.get("done_reason", "stop")
-                if done_reason == "length":
-                    logger.warning(f"Brain: Synthesis truncated (done_reason=length). HEAVY_MAX_TOKENS={Config.ollama_multi_model.HEAVY_MAX_TOKENS}. Consider reducing CHUNK_SIZE or RETRIEVAL_FINAL_TOP_K.")
+            full_answer = ""
+            done_reason = "stop"
+            
+            # SOTA FIX: Use async streaming from LangChain LLM to allow the event 
+            # loop to check the abort flag instead of blocking synchronously.
+            async for chunk in self.llm_heavy.astream(prompt, config={"tags": ["synthesis"]}):
+                if check_abort_fn and check_abort_fn():
+                    logger.info("Brain: Abort signal detected during synthesis, breaking stream.")
+                    full_answer = ""
+                    done_reason = "abort"
+                    break
+                full_answer += chunk
+
         except Exception as e:
             logger.error(f"Synthesis generation failed: {e}")
             full_answer = "I was unable to generate a response. Please try again."

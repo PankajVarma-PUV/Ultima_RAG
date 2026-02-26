@@ -781,6 +781,9 @@ async def unified_query(
             # ── RESET ABORT FLAG: Ensure a clean slate for this turn ──
             abort_flags.pop(chat_id, None)
             
+            # SOTA: Immediately ping the UI with the conversation ID so the STOP button can bind to it
+            yield f"data: {json.dumps({'stage': 'initializing', 'conversation_id': chat_id}, ensure_ascii=False)}\n\n"
+            
             # SOTA Sync: Ensure conversation exists in BOTH metadata (SQLite) and vector (LanceDB)
             if app_state.db:
                 # Unified layer handles both if sqlite_db is passed
@@ -795,6 +798,8 @@ async def unified_query(
             
             if files:
                 for file in files:
+                    if abort_flags.get(chat_id): break # Abort during upload phase
+                    
                     content = await file.read()
                     local_path = save_upload(chat_id, file.filename.split('.')[-1], file.filename, content)
                     
@@ -810,7 +815,7 @@ async def unified_query(
                         text = ""
                         if file.filename.lower().endswith('.pdf'):
                             from ..core.document_processor import DocumentProcessor
-                            text, image_paths = DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename)
+                            text, image_paths = await DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename)
                             
                             # Process extracted images
                             from ..vision.manager import MultimodalManager
@@ -833,6 +838,11 @@ async def unified_query(
                             )
                             await index_documents(idx_req)
                     processed_files.append(file.filename)
+
+            if abort_flags.get(chat_id):
+                # Terminated early during uploads
+                yield f"data: {json.dumps({'stage': 'terminated', 'message': 'Upload terminated.'}, ensure_ascii=False)}\n\n"
+                return
 
             # 2. Await background enrichment tasks if any
             if enrichment_tasks:
@@ -875,7 +885,8 @@ async def unified_query(
                 mentioned_files=mentioned_files,
                 uploaded_files=processed_files,  # Pass uploaded files for auto-tagging
                 use_web_search=_use_web_search,
-                original_query=working_query
+                original_query=working_query,
+                check_abort_fn=lambda: abort_flags.get(chat_id)
             )
             
             final_result = None
@@ -1712,8 +1723,15 @@ async def admin_nuke(request: NukeRequest):
         else:
             raise HTTPException(status_code=500, detail=f"System nuke failed: {message}")
     
-    # Update app state to reflect reset
-    # app_state.ready = False  # FIXED: Do not lock the app, allow it to continue serving
+    # Refresh app_state databases to ensure the UI gets empty results
+    app_state.sqlite_db = get_relational_db()
+    app_state.db = UltimaRAGDatabase()
+    app_state.memory = MemoryManager(app_state.db)
+    app_state.brain = MetacognitiveBrain(
+        app_state.db, app_state.memory,
+        sqlite_db=app_state.sqlite_db
+    )
+    
     return {"success": True, "message": message}
 
 # =============================================================================

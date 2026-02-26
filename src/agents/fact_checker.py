@@ -65,7 +65,8 @@ class FactChecker:
         self.support_threshold = support_threshold
         
         # LLM client for claim extraction
-        self.client = get_ollama_client()
+        model = Config.ollama_multi_model.AGENT_MODELS.get("fact_checker", OllamaConfig.MODEL_NAME)
+        self.client = OllamaClient(model_name=model)
         
         logger.info(f"FactChecker initialized with NLI model: {nli_model_name}")
     

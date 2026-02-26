@@ -94,8 +94,8 @@ class ContentEnricher:
     """Agent: Content Enrichment Specialist (Configured Model)"""
     
     def __init__(self, model_name: str = None):
-        from ..core.config import OllamaConfig
-        self.model_name = model_name or OllamaConfig.MODEL_NAME
+        from ..core.config import OllamaConfig, Config
+        self.model_name = model_name or Config.ollama_multi_model.HEAVY_MODEL
         
         # Enforce minimum timeout for Enrichment (10 minutes) given the complexity of the task
         enrichment_timeout = max(OllamaConfig.TIMEOUT, 600)

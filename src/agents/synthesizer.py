@@ -52,10 +52,13 @@ class SynthesizerAgent:
         """
         self.client = get_ollama_client()
         
+        from ..core.config import Config
+        model = Config.ollama_multi_model.AGENT_MODELS.get("synthesizer", Config.ollama_multi_model.HEAVY_MODEL)
+            
         if not self.client.is_available():
-            logger.warning("Ollama not available - synthesis will fail")
+            logger.warning("Ollama not available - synthesizer will not function")
         else:
-            logger.info(f"SynthesisAgent initialized with Ollama: {OllamaConfig.MODEL_NAME}")
+            logger.info(f"SynthesisAgent initialized with Ollama: {model}")
     
     def synthesize(
         self,
@@ -92,10 +95,10 @@ class SynthesizerAgent:
             context = format_context_for_synthesis(chunks)
             
             # Select model and prompt
-            model = OllamaConfig.MODEL_NAME
+            model = Config.ollama_multi_model.AGENT_MODELS.get("synthesizer", OllamaConfig.MODEL_NAME)
             if is_multimodal:
                 logger.info("Multimodal content detected. Switching to Reasoning Model.")
-                model = OllamaConfig.MODEL_NAME
+                # We could potentially switch to a multimodal specific model here, but keep configured model
                 from ..core.prompts import MULTIMODAL_REASONING_PROMPT
                 prompt = MULTIMODAL_REASONING_PROMPT.format(
                     context=context,

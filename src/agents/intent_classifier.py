@@ -51,7 +51,7 @@ class IntentClassifier:
     def __init__(self):
         from ..core.config import Config
         self.llm = Ollama(
-            model=Config.ollama.MODEL_NAME,
+            model=Config.ollama_multi_model.AGENT_MODELS.get("intent_classifier", Config.ollama.MODEL_NAME),
             base_url=Config.ollama.BASE_URL,
             timeout=Config.ollama.TIMEOUT
         )

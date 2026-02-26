@@ -64,7 +64,8 @@ class ImageProcessor:
                 if not torch.cuda.is_available() and force_gpu:
                     logger.warning("EasyOCR: Ultima_FORCE_GPU is ON. Attempting GPU loading despite CUDA reporting False.")
                 
-                self.ocr_reader = easyocr.Reader(['en'], gpu=cuda_available)
+                # SOTA: Multi-language 'Global Core' configuration
+                self.ocr_reader = easyocr.Reader(['en', 'fr', 'es', 'de', 'it', 'pt'], gpu=cuda_available)
                 logger.info(f"EasyOCR reader initialized (GPU={cuda_available})")
             except ImportError:
                 logger.warning("easyocr not installed. OCR stage will be skipped.")

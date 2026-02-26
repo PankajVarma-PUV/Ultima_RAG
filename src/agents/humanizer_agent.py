@@ -75,12 +75,13 @@ class HumanizerAgent:
         """
         Initialize Humanizer Agent with Ollama client.
         """
-        self.client = get_ollama_client()
+        model = Config.ollama_multi_model.AGENT_MODELS.get("humanizer", OllamaConfig.MODEL_NAME)
+        self.client = OllamaClient(model_name=model)
         
         if not self.client.is_available():
             logger.warning("Ollama not available - humanizer will use passthrough")
         else:
-            logger.info(f"HumanizerAgent initialized with Ollama: {OllamaConfig.MODEL_NAME}")
+            logger.info(f"HumanizerAgent initialized with Ollama: {model}")
     
     def humanize(
         self,

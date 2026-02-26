@@ -33,7 +33,7 @@ class HallucinationHealer:
         healer_timeout = max(Config.ollama.TIMEOUT, 600)
         
         self.llm = OllamaClient(
-            model_name=Config.ollama.MODEL_NAME,
+            model_name=Config.ollama_multi_model.AGENT_MODELS.get("healer", Config.ollama.MODEL_NAME),
             timeout=healer_timeout
         )
         logger.info(f"Hallucination Healer initialized | Model: {self.llm.model_name} | Timeout: {self.llm.timeout}s | URL: {self.llm.base_url}")

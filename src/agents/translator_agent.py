@@ -70,7 +70,7 @@ class TranslatorAgent:
         Args:
             model_name: Ollama model to use (default: from config)
         """
-        self.model_name = model_name or OllamaConfig.MODEL_NAME
+        self.model_name = model_name or Config.ollama_multi_model.AGENT_MODELS.get("translator", OllamaConfig.MODEL_NAME)
         self.client = OllamaClient(model_name=self.model_name)
         
         if not self.client.is_available():

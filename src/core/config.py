@@ -100,13 +100,15 @@ class OllamaMultiModelConfig:
 
     # Per-agent model assignments — all default to target_model, overridable individually
     AGENT_MODELS = {
-        "query_analyzer": os.getenv("AGENT_MODEL_QUERY_ANALYZER", target_model),
-        "synthesizer":    os.getenv("AGENT_MODEL_SYNTHESIZER",    target_model),
-        "humanizer":      os.getenv("AGENT_MODEL_HUMANIZER",      target_model),
-        "fact_checker":   os.getenv("AGENT_MODEL_FACT_CHECKER",   target_model),
-        "translator":     os.getenv("AGENT_MODEL_TRANSLATOR",     target_model),
-        "rewriter":       os.getenv("AGENT_MODEL_REWRITER",       target_model),
-        "chat":           os.getenv("AGENT_MODEL_CHAT",           target_model),
+        "query_analyzer":    os.getenv("AGENT_MODEL_QUERY_ANALYZER", LIGHTWEIGHT_MODEL),
+        "synthesizer":       os.getenv("AGENT_MODEL_SYNTHESIZER",    HEAVY_MODEL),
+        "humanizer":         os.getenv("AGENT_MODEL_HUMANIZER",      LIGHTWEIGHT_MODEL),
+        "fact_checker":      os.getenv("AGENT_MODEL_FACT_CHECKER",   LIGHTWEIGHT_MODEL),
+        "translator":        os.getenv("AGENT_MODEL_TRANSLATOR",     HEAVY_MODEL),
+        "healer":            os.getenv("AGENT_MODEL_HEALER",         HEAVY_MODEL),
+        "intent_classifier": os.getenv("AGENT_MODEL_INTENT",         LIGHTWEIGHT_MODEL),
+        "planner":           os.getenv("AGENT_MODEL_PLANNER",        HEAVY_MODEL),
+        "chat":              os.getenv("AGENT_MODEL_CHAT",           target_model),
     }
 
 

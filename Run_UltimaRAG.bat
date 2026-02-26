@@ -226,42 +226,158 @@ REM  CUDA 12.4+        -> cu124
 REM ==========================================================
 if "!CUDA_MAJOR!"=="11" (
     set "TORCH_URL=https://download.pytorch.org/whl/cu118"
+    set "EXPECTED_CUDA_TAG=cu118"
+    set "EXPECTED_TORCH_CUDA_MAJOR=11"
     goto :gpu_found
 )
 if "!CUDA_MAJOR!"=="12" (
     if !CUDA_MINOR! GEQ 4 (
         set "TORCH_URL=https://download.pytorch.org/whl/cu124"
+        set "EXPECTED_CUDA_TAG=cu124"
+        set "EXPECTED_TORCH_CUDA_MAJOR=12"
     ) else (
         set "TORCH_URL=https://download.pytorch.org/whl/cu121"
+        set "EXPECTED_CUDA_TAG=cu121"
+        set "EXPECTED_TORCH_CUDA_MAJOR=12"
     )
     goto :gpu_found
 )
 REM Unknown CUDA major - use cu121 as safe default for RTX cards
 set "TORCH_URL=https://download.pytorch.org/whl/cu121"
+set "EXPECTED_CUDA_TAG=cu121"
+set "EXPECTED_TORCH_CUDA_MAJOR=12"
 goto :gpu_found
 
 :no_gpu
 echo [INFO] No NVIDIA GPU detected. CPU-only PyTorch will be installed.
-goto :install_requirements
+set "EXPECTED_CUDA_TAG=CPU"
+set "EXPECTED_TORCH_CUDA_MAJOR=0"
+goto :run_preflight
 
 :gpu_found
-echo [OK] GPU detected - PyTorch wheel: !TORCH_URL!
+echo [OK] GPU detected - PyTorch wheel target: !TORCH_URL!
 
 REM ==========================================================
-REM 5.4: INSTALL requirements.txt
+REM 5.4: PRE-FLIGHT TORCH VERIFICATION GATE
 REM
-REM  Runs BEFORE torch install on purpose. Packages like
-REM  sentence-transformers and easyocr declare torch as a
-REM  dependency, pulling in a CPU build from PyPI. That is
-REM  intentional - step 5.5 force-removes it immediately after.
+REM  PURPOSE:
+REM  On a clean re-run where torch is already correctly installed
+REM  (GPU build, CUDA available, correct CUDA major version),
+REM  there is zero reason to uninstall and re-download ~2.5 GB.
+REM
+REM  WHY importlib.util.find_spec AND NOT try/except:
+REM  Batch line-continuation (^) collapses multi-line strings
+REM  into a single space-separated line. Python's try/except
+REM  requires the except clause on a NEW indented line - it
+REM  cannot appear after a semicolon. Any attempt to write
+REM  try/except across ^ continuation lines produces a Python
+REM  SyntaxError, causing the check to always exit with code 1
+REM  and therefore always trigger reinstall. This bug silently
+REM  defeats the entire optimisation.
+REM
+REM  importlib.util.find_spec('torch') returns None if torch
+REM  is not installed - no exception, no indentation needed.
+REM  Combined with conditional expressions, this makes the
+REM  entire three-step check a valid Python one-liner.
+REM
+REM  EXPANSION NOTE (%% vs !!):
+REM  %EXPECTED_TORCH_CUDA_MAJOR% uses normal %% expansion, not
+REM  delayed !! expansion. This is correct because:
+REM    - This is a single non-parenthesised command line.
+REM    - %% expansion occurs when the line is reached.
+REM    - The variable is fully set before this line runs.
+REM  Using !! inside a quoted -c string passed to Python would
+REM  not expand correctly in all batch contexts.
+REM
+REM  Exit codes:
+REM    0  = All checks passed -> SKIP reinstall
+REM    1  = torch not found (find_spec returned None)
+REM    2  = torch found but cuda.is_available() is False
+REM    3  = CUDA available but major version mismatches driver
 REM ==========================================================
-:install_requirements
+:run_preflight
 echo.
+echo [INFO] Running PyTorch pre-flight verification...
+set "SKIP_TORCH_INSTALL=0"
+
+if "!EXPECTED_CUDA_TAG!"=="CPU" (
+    REM ---------------------------------------------------
+    REM CPU path: probe torch existence via find_spec.
+    REM Exits 0 if torch is present, 1 if not.
+    REM No try/except needed - no SyntaxError risk.
+    REM ---------------------------------------------------
+    "%VENV_PYTHON%" -c "import sys,importlib.util;sys.exit(0 if importlib.util.find_spec('torch') is not None else 1)" >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        echo [OK] CPU torch already installed - skipping reinstall.
+        set "SKIP_TORCH_INSTALL=1"
+    ) else (
+        echo [INFO] torch not found - will install.
+    )
+) else (
+    REM ---------------------------------------------------
+    REM GPU path: three checks in one valid Python one-liner.
+    REM
+    REM  s = find_spec('torch')
+    REM  -> if None: exit 1  (not installed)
+    REM  -> else: import torch
+    REM     -> if not cuda available: exit 2  (CPU build)
+    REM     -> get installed CUDA major from torch.version.cuda
+    REM        -> if matches expected: exit 0  (all good)
+    REM        -> else: exit 3  (wrong wheel tier)
+    REM
+    REM  sys.exit() raises SystemExit so code after it in the
+    REM  same semicolon chain never executes - this is the
+    REM  correct and safe way to use conditional exits inline.
+    REM ---------------------------------------------------
+    "%VENV_PYTHON%" -c "import sys,importlib.util;s=importlib.util.find_spec('torch');sys.exit(1) if s is None else None;import torch;sys.exit(2) if not torch.cuda.is_available() else None;m=(torch.version.cuda or '0').split('.')[0];sys.exit(0 if m=='%EXPECTED_TORCH_CUDA_MAJOR%' else 3)" >nul 2>&1
+    set "PREFLIGHT_CODE=!ERRORLEVEL!"
+
+    if "!PREFLIGHT_CODE!"=="0" (
+        REM All checks passed - torch is healthy, correct build, CUDA live
+        echo [OK] PyTorch is already correctly installed with CUDA support.
+        for /f "delims=" %%V in ('"%VENV_PYTHON%" -c "import torch;print(torch.__version__)" 2^>nul') do set "EXISTING_TORCH_VER=%%V"
+        for /f "delims=" %%C in ('"%VENV_PYTHON%" -c "import torch;print(torch.version.cuda)" 2^>nul') do set "EXISTING_TORCH_CUDA=%%C"
+        echo [OK] Installed : PyTorch !EXISTING_TORCH_VER! ^| Compiled CUDA !EXISTING_TORCH_CUDA!
+        echo [OK] Expected  : CUDA major %EXPECTED_TORCH_CUDA_MAJOR% ^(%EXPECTED_CUDA_TAG%^)
+        echo [SKIP] No reinstall needed. Jumping to requirements check.
+        set "SKIP_TORCH_INSTALL=1"
+    ) else if "!PREFLIGHT_CODE!"=="1" (
+        echo [INFO] torch is not installed - will perform full install.
+    ) else if "!PREFLIGHT_CODE!"=="2" (
+        echo [WARNING] torch found but CUDA is NOT available - CPU build detected.
+        echo [INFO] Will uninstall and reinstall the correct GPU build.
+    ) else if "!PREFLIGHT_CODE!"=="3" (
+        echo [WARNING] torch found but CUDA major version does not match your driver.
+        echo [INFO] Installed build targets a different CUDA generation.
+        echo [INFO] Will uninstall and reinstall the correct GPU build.
+    )
+)
+echo.
+
+REM ==========================================================
+REM 5.5: INSTALL requirements.txt
+REM
+REM  Always runs so any missing non-torch packages are resolved.
+REM
+REM  If SKIP_TORCH_INSTALL=1 (torch is healthy), pip sees torch
+REM  as already satisfied and leaves it untouched. PEP 440 local
+REM  versions (the +cuXXX suffix on GPU builds) compare greater
+REM  than the plain release so == and >= constraints in
+REM  requirements.txt are both satisfied. pip will not re-download.
+REM
+REM  --quiet is intentionally absent. If this step fails you need
+REM  to see the full pip output to understand why. The error
+REM  message "review the output above" is only useful when there
+REM  IS output above to review.
+REM ==========================================================
 echo [INFO] Installing project dependencies from requirements.txt...
-echo [INFO] ^(Any torch pulled in here will be replaced in the next step^)
+if "!SKIP_TORCH_INSTALL!"=="1" (
+    echo [INFO] ^(torch is healthy - pip will not touch it^)
+)
 "%VENV_PYTHON%" -m pip install -r "%BASE_DIR%\requirements.txt"
 if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] requirements.txt install failed. Check output above.
+    echo.
+    echo [ERROR] requirements.txt install failed. Review the pip output above.
     pause
     exit /b 1
 )
@@ -269,22 +385,26 @@ echo [OK] requirements.txt done.
 echo.
 
 REM ==========================================================
-REM 5.5: FORCE-UNINSTALL ALL EXISTING TORCH PACKAGES
+REM 5.6: CONDITIONAL TORCH UNINSTALL + REINSTALL
 REM
-REM  Removes any CPU torch that was pulled in as a transitive
-REM  dependency. Forces pip to do a clean install next step
-REM  rather than skipping with "already satisfied".
+REM  ONLY entered when pre-flight determined torch is absent,
+REM  broken, or the wrong CUDA build.
+REM
+REM  When SKIP_TORCH_INSTALL=1 the entire block is bypassed.
+REM  A correctly installed GPU torch is NEVER touched on a
+REM  healthy re-run. No more unnecessary 2.5 GB downloads.
 REM ==========================================================
-echo [INFO] Removing any existing torch packages...
+if "!SKIP_TORCH_INSTALL!"=="1" (
+    echo [SKIP] PyTorch reinstall bypassed - existing installation is valid.
+    echo.
+    goto :final_verify
+)
+
+echo [INFO] Clearing any existing torch packages before clean install...
 "%VENV_PYTHON%" -m pip uninstall torch torchvision torchaudio -y >nul 2>&1
 echo [OK] Existing torch cleared.
 echo.
 
-REM ==========================================================
-REM 5.6: INSTALL CORRECT TORCH BUILD - ALWAYS THE FINAL STEP
-REM
-REM  Nothing runs after this so nothing can overwrite it.
-REM ==========================================================
 if "!TORCH_URL!"=="CPU" (
     echo [INFO] Installing CPU-only PyTorch...
     echo.
@@ -296,16 +416,16 @@ if "!TORCH_URL!"=="CPU" (
     )
     echo [OK] CPU PyTorch installed.
 ) else (
-    echo [INFO] Installing GPU PyTorch: !TORCH_URL!
+    echo [INFO] Installing GPU PyTorch from: !TORCH_URL!
     echo [INFO] Download is ~2.5 GB - please be patient.
     echo.
     "%VENV_PYTHON%" -m pip install torch torchvision torchaudio --index-url "!TORCH_URL!"
     if !ERRORLEVEL! NEQ 0 (
         echo.
-        echo [WARNING] GPU install failed. Falling back to CPU...
+        echo [WARNING] GPU install failed. Falling back to CPU PyTorch...
         "%VENV_PYTHON%" -m pip install torch torchvision torchaudio
         if !ERRORLEVEL! NEQ 0 (
-            echo [ERROR] CPU fallback also failed.
+            echo [ERROR] CPU fallback also failed. Check your internet connection.
             pause
             exit /b 1
         )
@@ -318,22 +438,30 @@ echo.
 
 REM ==========================================================
 REM 5.7: FINAL VERIFICATION
+REM
+REM  Runs after any new install to confirm the environment is
+REM  healthy before launching the server.
+REM  Also runs on the SKIP path as a lightweight sanity check
+REM  (~200ms import cost) to confirm nothing changed since the
+REM  pre-flight ran (e.g. requirements.txt re-installing a
+REM  different torch as a transitive dependency).
 REM ==========================================================
+:final_verify
 echo [INFO] Verifying final PyTorch build...
-"%VENV_PYTHON%" -c "import torch; v=torch.__version__; c=torch.cuda.is_available(); print('[OK] PyTorch ' + v + ' | CUDA available: ' + str(c)); exit(0 if c else 2)"
-set "VERIFY=%ERRORLEVEL%"
+"%VENV_PYTHON%" -c "import torch;v=torch.__version__;c=torch.cuda.is_available();print('[OK] PyTorch ' + v + ' | CUDA available: ' + str(c));exit(0 if c else 2)"
+set "VERIFY=!ERRORLEVEL!"
 
 if "!VERIFY!"=="0" (
-    echo [OK] SUCCESS - GPU confirmed, models will run on your RTX 3060.
+    echo [OK] SUCCESS - GPU confirmed, models will run on your RTX GPU.
 ) else if "!VERIFY!"=="2" (
     if "!TORCH_URL!"=="CPU" (
         echo [OK] CPU PyTorch confirmed - no GPU on this machine.
     ) else (
         echo.
         echo [WARNING] GPU torch installed but CUDA still shows False.
-        echo [WARNING] This means your NVIDIA driver needs updating.
+        echo [WARNING] This typically means your NVIDIA driver needs updating.
         echo [WARNING] Get the latest driver at: https://www.nvidia.com/drivers
-        echo [WARNING] After updating driver: delete .venv and re-run.
+        echo [WARNING] After updating the driver: delete .venv and re-run this script.
         echo.
     )
 ) else (

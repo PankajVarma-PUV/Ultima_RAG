@@ -50,12 +50,13 @@ class QueryAnalyzer:
         """
         Initialize Query Analyzer with Ollama client.
         """
-        self.client = get_ollama_client()
+        model = Config.ollama_multi_model.AGENT_MODELS.get("query_analyzer", OllamaConfig.MODEL_NAME)
+        self.client = OllamaClient(model_name=model)
         
         if not self.client.is_available():
             logger.warning("Ollama not available - will use fallback analysis")
         else:
-            logger.info(f"QueryAnalyzer initialized with Ollama: {OllamaConfig.MODEL_NAME}")
+            logger.info(f"QueryAnalyzer initialized with Ollama: {model}")
     
     def analyze(self, query: str) -> Dict:
         """
