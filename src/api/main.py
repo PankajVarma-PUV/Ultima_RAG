@@ -2250,7 +2250,7 @@ async def get_file_details(filename: str, conversation_id: Optional[str] = None)
     try:
         db = get_vector_db()
         # 1. Get asset metadata
-        asset = db.get_asset_by_name(filename)
+        asset = db.get_asset_by_name(filename, conversation_id)
             
         # 2. Get chunks (Filtered by conversation to prevent duplicate fragments from other chats)
         chunks = db.get_knowledge_chunks_by_file(filename, conversation_id=conversation_id)

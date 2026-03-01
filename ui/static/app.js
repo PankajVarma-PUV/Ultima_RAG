@@ -1104,6 +1104,7 @@ class UltimaApp {
             this.removeThinkingIndicator();
             this.hideTelemetryHud();
             this.hideStopButton();
+            this.updateSystemStatus();
         }
     }
 
@@ -1179,15 +1180,17 @@ class UltimaApp {
                 if (finalContent && finalContent.trim()) {
                     bubble.innerHTML = this.renderStructuredResponse(finalContent);
                     // SOTA: Inject RAG Suggested Actions ONLY when:
-                    //   – intent is RAG / evidence-based (not 'summarize')
-                    //   – user had document context (@mention or uploaded file)
-                    const intent = (data && (data.intent || (data.ui_hints && data.ui_hints.intent) || ''));
+                    //   – intent is RAG / evidence-based
+                    //   – NOT an agentic action response
+                    //   – user had document context
+                    const intent = (data && (data.intent || (data.ui_hints && data.ui_hints.intent) || '')).toUpperCase();
                     const isSummarize = (data && data.agent_type === 'SUMMARIZE') ||
-                        intent.toLowerCase().includes('summarize') ||
-                        intent.toLowerCase().includes('summary');
+                        intent.includes('SUMMARIZE') ||
+                        intent.includes('SUMMARY');
+                    const isAgenticAction = ['DEEP_INSIGHT', 'EXECUTIVE_SUMMARY', 'RISK_ASSESSMENT'].includes(intent);
                     const hasDocContext = this.state.mentionedFiles.length > 0 ||
                         (this.state.activeConversation && this.state.workspaceFileCount > 0);
-                    if (!isSummarize && hasDocContext) {
+                    if (!isSummarize && !isAgenticAction && hasDocContext) {
                         this.injectActionButtons(bubble);
                     }
                 }
@@ -1409,14 +1412,11 @@ class UltimaApp {
                                 }
                             }
 
-                            // Phase 4: Inject dynamic or fallback static buttons
+                            // Phase 4: Inject dynamic buttons
                             if (aiBubble && aiBubble.getBubbleEl) {
                                 const bubbleEl = aiBubble.getBubbleEl();
-                                if (nextActionsReceived.length >= 3) {
+                                if (nextActionsReceived.length > 0) {
                                     this.injectDynamicActionButtons(bubbleEl, nextActionsReceived);
-                                } else {
-                                    // Fallback to static action buttons
-                                    this.injectActionButtons(bubbleEl);
                                 }
                             }
 
@@ -1452,6 +1452,7 @@ class UltimaApp {
             this.removeThinkingIndicator();
             this.hideTelemetryHud();
             this.hideStopButton();
+            this.updateSystemStatus();
         }
     }
 
@@ -1932,7 +1933,7 @@ class UltimaApp {
                         <div class="space-y-2">
                             <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Status</span><span class="text-green-400">Grounded</span></div>
                             <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Persistence</span><span class="text-cyan-400">Converged</span></div>
-                            <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Type</span><span class="text-white">${data.type || ext.toUpperCase() || 'Unknown'}</span></div>
+                            <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Type</span><span class="text-white">${(data.type && data.type.toLowerCase() !== 'unknown') ? data.type : (ext ? ext.toUpperCase() : 'Unknown')}</span></div>
                             ${isPerResponse ? `<div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Fragment Scope</span><span class="text-cyan-400">Per-Response</span></div>` : ''}
                         </div>
                     </div>

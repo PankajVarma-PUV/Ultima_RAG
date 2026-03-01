@@ -969,7 +969,7 @@ class MetacognitiveBrain:
                         text = e.get("text", "")
                         sub_type = e.get("sub_type", "text")
                         if "visual" in str(sub_type).lower():
-                            context_blocks.append(f"NAME: {source} (VISUAL_CHART)\nCONTENT: {text}")
+                            context_blocks.append(f"NAME: {source}\nCONTENT: {text} [Visual Context]")
                         else:
                             context_blocks.append(f"SOURCE: {source}\nCONTENT: {text}")
 
@@ -1746,6 +1746,23 @@ class MetacognitiveBrain:
             txt = ev.get("text", "")
             if txt:
                 context_parts.append(f"SOURCE: {src}\nCONTENT: {txt}")
+                
+        # SOTA: Ensure media assets (images, audio, video) whose enriched text is stored
+        # in the scraped_content table are explicitly added to the Agentic Action context.
+        # This fixes the "No Context Available" error for visual asset analysis.
+        try:
+            scraped = self.db.get_scraped_content_by_chat(conversation_id)
+            for sc in scraped:
+                fname = sc.get('file_name', 'Media Asset')
+                if document_names and fname not in document_names:
+                    continue
+                
+                txt = sc.get('content', '')
+                if txt and f"SOURCE: {fname}" not in "\n".join(context_parts):
+                    context_parts.append(f"SOURCE: {fname} ({sc.get('sub_type', 'image')} Analysis)\nCONTENT: {txt}")
+        except Exception as e:
+            logger.warning(f"AgenticAction media asset load error: {e}")
+
         grounded_context = "\n\n".join(context_parts) if context_parts else "NO_CONTEXT_AVAILABLE"
         # Cap context to avoid VRAM overflow
         if len(grounded_context) > 8000:
@@ -1816,6 +1833,7 @@ INTENT: EXECUTIVE_SUMMARY
 2. LENGTH: 200-300 words. Concise, dense, actionable.
 3. TONE: C-suite ready. Authoritative. Zero fluff.
 4. CITATIONS: Use [[FileName]] notation for source attribution.
+5. ADAPTABILITY: If the context is very brief (e.g., an image description or short snippet), synthesise what you can. DO NOT complain about missing context.
 </executive_mandates>
 
 EXECUTIVE SUMMARY:"""
@@ -1871,6 +1889,7 @@ OUTPUT INSTRUCTIONS:
 - Follow this exact schema:
 {json.dumps(risk_schema, indent=2)}
 - Identify 3-6 specific, concrete risks from the document content.
+- If the context is brief (e.g., a short image description), extract whatever risks are possible. DO NOT halt analysis or complain about missing data.
 - Set overall_score based on the weighted average severity of all identified risks.
 
 JSON RESPONSE:"""

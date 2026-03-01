@@ -791,12 +791,36 @@ class UltimaRAGDatabase:
             logger.warning(f"Could not build FTS index (ensure tantivy is installed): {e}")
 
     def get_knowledge_count(self, conversation_id: Optional[str] = None) -> int:
-        """Fetch the total count of document chunks in the knowledge base, optionally filtered by conversation."""
+        """Fetch the total count of document chunks in the knowledge base, optionally filtered by conversation.
+           Includes both text chunks and media assets (images).
+        """
         try:
-            table = self.conn.open_table("knowledge_base")
+            total_count = 0
+            
+            # 1. Count text chunks from knowledge_base
+            kb_table = self.conn.open_table("knowledge_base")
             if conversation_id is not None:
-                return len(table.search().where(f"conversation_id = '{conversation_id}'").to_list())
-            return table.count_rows()
+                total_count += len(kb_table.search().where(f"conversation_id = '{conversation_id}'").to_list())
+            else:
+                total_count += kb_table.count_rows()
+                
+            # 2. Count media items (e.g. images without text chunks) from conversation_assets
+            # We assume non-text parsed assets (like plain images) contribute as 1 "chunk" conceptually.
+            import pyarrow as pa
+            if "conversation_assets" in self.conn.table_names():
+                assets_table = self.conn.open_table("conversation_assets")
+                if conversation_id is not None:
+                    # Only add assets that are purely visual (images) 
+                    # If they were PDFs, they'd have chunks in knowledge_base, but we can just count all assets 
+                    # to be safe, or specifically filter if needed. Let's count media types.
+                    assets = assets_table.search().where(f"conversation_id = '{conversation_id}'").to_list()
+                    image_assets = [a for a in assets if a.get('file_type', '').startswith('image/')]
+                    total_count += len(image_assets)
+                else:
+                    assets_df = assets_table.to_pandas()
+                    total_count += len(assets_df[assets_df['file_type'].str.startswith('image/', na=False)])
+                    
+            return total_count
         except Exception as e:
             logger.error(f"Error getting knowledge count: {e}")
             return 0
@@ -1473,12 +1497,15 @@ class UltimaRAGDatabase:
             logger.error(f"Error in pivot search: {e}")
             return []
 
-    def get_asset_by_name(self, file_name: str) -> Optional[Dict]:
-        """Fetch asset metadata by its name."""
+    def get_asset_by_name(self, file_name: str, conversation_id: Optional[str] = None) -> Optional[Dict]:
+        """Fetch asset metadata by its name, optionally scoped to a conversation."""
         try:
             table = self.conn.open_table("conversation_assets")
             f_clean = file_name.lower().strip()
-            results = table.search().where(f"LOWER(file_name) = '{f_clean}'").to_list()
+            where_clause = f"LOWER(file_name) = '{f_clean}'"
+            if conversation_id:
+                where_clause += f" AND conversation_id = '{conversation_id}'"
+            results = table.search().where(where_clause).to_list()
             return results[0] if results else None
         except Exception as e:
             logger.error(f"Error getting asset by name: {e}")
