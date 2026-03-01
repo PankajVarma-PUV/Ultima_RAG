@@ -34,6 +34,16 @@ from .planner import MultiStagePlanner, ExecutionPlan
 from .fusion_extractor import UniversalFusionExtractor
 from .healer import HallucinationHealer
 from ..core.telemetry import telemetry
+from .translator_agent import TranslatorAgent
+
+# ─── Translation guard: values that mean "keep English as-is" ─────────────
+# Source: all IntentClassifier.classify() target_language return values that
+# represent English or unknown language. None means no language was detected.
+# Update this set if IntentClassifier adds new supported languages.
+ENGLISH_IDENTIFIERS: frozenset = frozenset({
+    None,       # No language pattern detected — keep English
+})
+# ─────────────────────────────────────────────────────────────────────────────
 
 # --- Specialized Internal Agents ---
 
@@ -203,6 +213,8 @@ class UltimaRAGState(TypedDict):
     reasoning: str # Step-by-step logic behind the response (SOTA Trace)
     shared_perception: Dict[str, Any] # NEW: Unified memory for sub-agents (Supervisor Model)
     use_web_search: bool  # Web-Breakout Agent toggle (passed from frontend)
+    retrieved_fragments: Optional[Dict[str, list]]  # SOURCE EXPLORER: Per-response chunks grouped by file
+    source_map: Optional[Dict[str, int]]            # SOURCE EXPLORER: file_name → citation_index
 
 # --- Node Implementations ---
 
@@ -252,6 +264,8 @@ class MetacognitiveBrain:
         self.retriever = RetrieverAgent(db)
         self.fact_checker = FactChecker()
         self.healer = HallucinationHealer()
+        # Initialize TranslatorAgent — uses Config-defined Ollama model (CPU, no VRAM usage)
+        self.translator = TranslatorAgent()
         
         # Build the Graph
         self.workflow = self._build_graph()
@@ -828,8 +842,24 @@ class MetacognitiveBrain:
             # If we are in isolation mode, we ONLY return what matched those files.
             logger.info(f"RAG: Isolated retrieval complete. Found {len(combined_evidence)} items for {isolation_targets}.")
             action_msg = f"Targeted retrieval complete. Found {len(combined_evidence)} relevant chunks in specified files."
+
+            # ── SOURCE EXPLORER: Build per-response fragment map ──────────────────
+            retrieved_fragments: Dict[str, list] = {}
+            for _ev in combined_evidence:
+                _src = _ev.get("file_name") or _ev.get("source") or "Unknown"
+                if _src not in retrieved_fragments:
+                    retrieved_fragments[_src] = []
+                retrieved_fragments[_src].append({
+                    "text": _ev.get("text", ""),
+                    "score": round(float(_ev.get("score", 0)), 4)
+                })
+            # Build numeric source_map: {filename: index_starting_at_1}
+            source_map = {fn: i + 1 for i, fn in enumerate(retrieved_fragments.keys())}
+            # ─────────────────────────────────────────────────────────────────────
+
             telemetry.end_activity(tid, {"count": len(combined_evidence), "mode": "strict_isolated", "action": action_msg})
-            return {"evidence": combined_evidence, "thought": action_msg}
+            return {"evidence": combined_evidence, "thought": action_msg,
+                    "retrieved_fragments": retrieved_fragments, "source_map": source_map}
 
         # Standard non-isolated vector search (Global knowledge base)
         # ONLY if no isolation_targets are set.
@@ -871,8 +901,23 @@ class MetacognitiveBrain:
                         evidence.append(e)
 
         action_msg = f"Multi-Query blanketed vector space and retrieved {len(evidence)} unique chunks."
+
+        # ── SOURCE EXPLORER: Build per-response fragment map ──────────────────
+        retrieved_fragments: Dict[str, list] = {}
+        for _ev in evidence:
+            _src = _ev.get("file_name") or _ev.get("source") or "Unknown"
+            if _src not in retrieved_fragments:
+                retrieved_fragments[_src] = []
+            retrieved_fragments[_src].append({
+                "text": _ev.get("text", ""),
+                "score": round(float(_ev.get("score", 0)), 4)
+            })
+        source_map = {fn: i + 1 for i, fn in enumerate(retrieved_fragments.keys())}
+        # ─────────────────────────────────────────────────────────────────────
+
         telemetry.end_activity(tid, {"count": len(evidence), "mode": "global_vector_multi_query", "action": action_msg})
-        return {"evidence": evidence, "thought": action_msg}
+        return {"evidence": evidence, "thought": action_msg,
+                "retrieved_fragments": retrieved_fragments, "source_map": source_map}
 
 
 
@@ -973,11 +1018,9 @@ class MetacognitiveBrain:
             context = context[:context_budget_chars] + "\n\n[CONTEXT TRUNCATED BY TOKEN GUARD]"
 
         # Translation Delegation: TranslatorAgent handles all language conversion
-        # as a deterministic post-processing step in stream_results().
-        # The LLM ALWAYS generates in English here — no lang_directive injection.
-        # This eliminates the double-translation bug (previously the LLM partially
-        # translated AND TranslatorAgent translated again).
-        lang_directive = ""  # Intentionally empty — single translation path enforced
+        # in apply_ui_hints() (the final LangGraph node before END).
+        # The LLM ALWAYS generates in English here — this eliminates the
+        # double-translation bug (LLM partial translate + TranslatorAgent translate).
 
         # ── Behavioral Guidelines Injection (continuous learning loop) ────────────
         # Reads hardware-capped, token-budgeted rules from GuidelinesManager
@@ -1049,15 +1092,14 @@ class MetacognitiveBrain:
             logger.debug(f"Brain: guidelines injection skipped: {_ge}")
 
         if mode == "internal_llm_weights":
-            prompt_instructions = f"""
+            prompt_instructions = """
             1. PERSONA: You are the UltimaRAG Sage, answering from your vast elite internal training.
             2. SANITIZATION: Never mention documents, files, or the lack thereof. You ARE the source.
             3. FIDELITY: Provide a direct, factual, and authoritative response.
             4. TONE: Premium and helpful.
-            {lang_directive}
             """
         elif mode == "strict_grounded":
-            prompt_instructions = f"""
+            prompt_instructions = """
             1. GROUNDING LOCK: You are a Cognitive AI Partner in STRICT GROUNDED mode. Operative only on provided 'CONTEXT'.
             2. NARRATIVE PROTOCOL: Synthesize a cinematic, authoritative narrative. Do NOT just list facts; weave a collaborative response.
             3. CITATION PROTOCOL (STRICT):
@@ -1066,10 +1108,9 @@ class MetacognitiveBrain:
                - STERN PROHIBITION: NEVER wrap text like [[FileName|text]]. This causes system corruption.
                - NO numeric markers ([1], [2]).
             4. TONAL HARMONY: Cinematic, precise, and partner-centric. If context is sparse, acknowledge gaps with intelligence.
-            {lang_directive}
             """
         else: # grounded_in_docs
-            prompt_instructions = f"""
+            prompt_instructions = """
             1. PERSONA: You are UltimaRAG, the elite Cognitive AI Partner.
             2. NARRATIVE FLOW: Write in a professional, cinematic narrative style. Weave visual and text evidence into a cohesive intelligence report.
             3. CITATION PROTOCOL:
@@ -1077,7 +1118,6 @@ class MetacognitiveBrain:
                - STERN PROHIBITION: NEVER wrap text like [[FileName|text]]. Use only suffix markers.
                - NO robotic numeric markers.
             4. TONE: Authoritative, cinematic, and deeply collaborative.
-            {lang_directive}
             """
 
         prompt = f"""
@@ -1335,7 +1375,7 @@ class MetacognitiveBrain:
         return {"answer": healed_answer, "reasoning": reasoning, "status": "HEALED", "thought": action_msg}
 
     async def apply_ui_hints(self, state: UltimaRAGState) -> Dict:
-        """Adaptive Resonance UI Theming."""
+        """Adaptive Resonance UI Theming + Translation (final node before END)."""
         mapping = {
             "multimodal_analysis": "#8B5CF6", # Purple
             "document_search": "#10B981",    # Emerald
@@ -1381,7 +1421,50 @@ class MetacognitiveBrain:
             "confidence_level": level,
             "fidelity": int(conf * 100) # Percentage for UI badge
         }
-        return {"ui_hints": hints}
+
+        # ─── TRANSLATION STEP (CASE B: async node, sync translate()) ─────────────
+        target_language = state.get("target_language")
+        final_answer    = state.get("answer", "")
+        translated_answer = final_answer  # default: keep English as-is
+
+        if target_language and target_language not in ENGLISH_IDENTIFIERS:
+            if final_answer and final_answer.strip():
+                try:
+                    logger.info(
+                        f"[TranslatorAgent] Translating answer → {target_language}"
+                    )
+                    result = self.translator.translate(
+                        text=final_answer,
+                        target_language=target_language
+                    )
+                    # translate() returns a Dict — extract the translation string
+                    translation_text = result.get("translation", "") if isinstance(result, dict) else str(result)
+                    if translation_text and translation_text.strip() and result.get("status") == "SUCCESS":
+                        translated_answer = translation_text
+                        logger.info(
+                            f"[TranslatorAgent] ✅ "
+                            f"{len(final_answer)} → {len(translated_answer)} ch"
+                        )
+                    else:
+                        logger.warning(
+                            "[TranslatorAgent] ⚠️ Empty or failed result — "
+                            "keeping English response"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"[TranslatorAgent] ❌ {e} — keeping English"
+                    )
+                    # translated_answer stays as final_answer (English)
+            else:
+                logger.debug("[TranslatorAgent] Skipped — empty answer")
+        else:
+            logger.debug(
+                f"[TranslatorAgent] Skipped — "
+                f"'{target_language}' is English/auto (no lang pattern detected)"
+            )
+        # ─── END TRANSLATION STEP ────────────────────────────────────────────────
+
+        return {"ui_hints": hints, "answer": translated_answer}
 
     async def run(self, query: str, conversation_id: str, project_id: str = "default", mentioned_files: list = None, uploaded_files: list = None, original_query: str = None, use_web_search: bool = False, check_abort_fn: Optional[Any] = None):
         """Entry point for the SOTA Metacognitive Loop."""
@@ -1434,6 +1517,8 @@ class MetacognitiveBrain:
             "shared_perception": {},
             "use_web_search": use_web_search,
             "thought": None,  # Thought-UI: ephemeral, populated by agents during run
+            "retrieved_fragments": {},  # SOURCE EXPLORER: populated by execute_rag
+            "source_map": {},           # SOURCE EXPLORER: populated by execute_rag
         }
 
         # SOTA: Return an async generator for API streaming
@@ -1603,6 +1688,8 @@ class MetacognitiveBrain:
                     "intent": last_state.get("intent"),
                     "ui_hints": last_state.get("ui_hints"),
                     "conversation_id": conversation_id,
+                    "retrieved_fragments": last_state.get("retrieved_fragments", {}),
+                    "source_map": last_state.get("source_map", {}),
                     "metadata": {
                         **last_state.get("metadata", {}),
                         "reasoning": last_state.get("reasoning")

@@ -1,5 +1,5 @@
 # UltimaRAG: The Complete Deep-Dive Guide to AI Agents
-> **Version:** Post-Audit (2026-02-27) — Fully corrected against live source code.
+> **Version:** Post-Audit v2 (2026-02-28) — Continuous learning loop CLOSED.
 > **Status:** ✅ Trustworthy source of truth. All "listens to / reports to" fields verified in code.
 
 Welcome to the **UltimaRAG Multi-Agent Architecture Guide**. This document describes all 27 specialized AI agents exactly as they exist in the current codebase — not as originally designed.
@@ -19,6 +19,7 @@ We have organized them into two sections:
 >
 > Two agents run **outside the graph** as API-layer middleware: `PromptFirewall` and `IdentityAgent`.
 > One agent runs via **post-processing** after the graph completes: `TranslatorAgent`.
+> Three infrastructure singletons registered in `app_state`: `EmbeddingManager`, `GuidelinesManager`, `ReflectionAgent`.
 
 ---
 
@@ -306,13 +307,22 @@ These agents are triggered by clicking action buttons in the UI. They bypass the
 ---
 
 ## 26. Self-Correction Agent (The Reflector)
-* **LLM Model Used:** `qwen3:4b` (Light)
-* **File:** `src/agents/reflector.py` — Class: `ReflectionAgent`
-* **Purpose:** Enables continuous learning by distilling behavioral rules from failed interactions.
-* **How it Works:** Analyzes the negative-feedback query-response pair, deduces an imperative corrective rule (e.g., "Always cite document name when referencing a statistic"), and appends it to `system_guidelines.json`. These guidelines are injected into future system prompts.
-* **📥 Listens To (Inputs):** `/query/feedback` endpoint — triggered automatically when `score < 0` (thumbs down)
-* **📤 Reports To (Outputs):** `system_guidelines.json` file (on disk) → injected into future LLM prompts
-* **⚠️ Note:** This agent IS active and wired into `main.py:765`. It runs as a `BackgroundTask` so it never blocks the response.
+* **LLM Model Used:** `gemma3:4b` (via `Config.learning.PRIMARY_OLLAMA_MODEL` — auto-derived, not hardcoded)
+* **File:** `src/agents/reflector.py` — Class: `ReflectionAgent`; singleton: `app_state.reflection_agent`
+* **Purpose:** Enables continuous learning by distilling behavioural rules from failed interactions and writing them to `system_guidelines.json`.
+* **How it Works (fully rewritten 2026-02-28):**
+  1. `schedule_reflection(feedback_data)` is called by the feedback endpoint and returns **immediately** (HTTP 200 does NOT wait)
+  2. An `asyncio.create_task()` is created, stored in `_background_tasks` set (prevents GC), with a done-callback that surfaces exceptions to logs
+  3. `asyncio.Semaphore(1)` ensures only one reflection write runs at a time
+  4. **Quality gate**: rejects queries < 10 chars, responses < 20 chars, or non-negative feedback signals
+  5. **Rule generation**: calls Ollama REST API with `format="json"` at `temperature=0.0`, validated by `GeneratedRule` Pydantic model (15–150 word rules, confidence 0.1–1.0)
+  6. **Deduplication**: uses `EmbeddingManager.encode()` (HuggingFace, CPU, run_in_executor) with cosine similarity ≥ 0.82 threshold; falls back to Jaccard keyword overlap (≥ 0.55) if embeddings unavailable
+  7. **Lifecycle**: stale rules (30 days + < 3 triggers) → retired; rule cap (30 for 4B models, 50 for 8B)
+  8. **Atomic write**: write-temp → `os.replace()` → `force_reload()` on GuidelinesManager
+  9. **Shutdown safety**: `await_pending_tasks()` called during lifespan shutdown (waits up to 15s)
+* **📥 Listens To (Inputs):** `POST /query/feedback` endpoint when `score < 0`
+* **📤 Reports To (Outputs):** `data/system_guidelines.json` → picked up by `GuidelinesManager` → injected into `generate_answer()` on every subsequent request
+* **⚠️ Updated from previous audit:** Previously called `BackgroundTasks.add_task(run_reflection)` which re-instantiated a new agent on each thumbs-down. Now uses singleton `app_state.reflection_agent` with asyncio task registry, Pydantic validation, semantic dedup, and graceful shutdown.
 
 ---
 
@@ -326,15 +336,31 @@ These agents are triggered by clicking action buttons in the UI. They bypass the
 
 ---
 
-## Dead Code Registry (Archived — Not Active in Production)
+## 28. Embedding Manager (The Semantic Fingerprinter)
+* **Model Used:** `all-MiniLM-L6-v2` (HuggingFace `sentence-transformers`, **CPU-only**, 384-dim, ~90MB)
+* **File:** `src/core/embedding_manager.py` — Class: `EmbeddingManager`; singleton: `app_state.embedding_manager`
+* **Purpose:** Provides 384-dimensional semantic embeddings for rule deduplication in the continuous learning loop. NEVER uses Ollama or GPU.
+* **How it Works:** Loaded once at startup via `initialize()` with `device='cpu'` (mandatory — must not compete with the LLM for 6GB VRAM). Exposes `encode(text) → list[float] | None` and `cosine_similarity(a, b) → float`. Always gracefully falls back — callers receive `None` and use keyword overlap instead.
+* **📥 Listens To (Inputs):** `ReflectionAgent._create_rule_entry()` and `ReflectionAgent._find_duplicate()` (via `run_in_executor` to avoid blocking the event loop)
+* **📤 Reports To (Outputs):** Embeddings stored inside each rule entry in `system_guidelines.json`
+* **Also contains:** `detect_model_size(model_name: str) → "4B" | "8B"` — the single source of truth for hardware-aware decisions (rule caps, injection limits). Never hardcode model size; always call this function.
 
-| File | What It Was | Why Archived |
-|---|---|---|
-| `Garbage/synthesizer.py` | `SynthesizerAgent` with Parent-Child Context Strategy | Synthesis done inline in `MetacognitiveBrain.generate_answer()` |
-| `Garbage/query_analyzer.py` | `QueryAnalyzer` with multi-query expansion & intent detection | Multi-query expansion done inline in `execute_rag()`; intent detection inline in `routes.py` |
-| `Garbage/humanizer_agent.py` | `HumanizerAgent` with burstiness/active-voice protocols | No call sites anywhere in codebase; cinematic tone comes from LLM prompts |
-| `Garbage/reranker.py` | `RerankerModule` standalone CrossEncoder wrapper | Reranking implemented inline in `RetrieverAgent.retrieve()` |
-| `Garbage/orchestrator.py` | `AgentOrchestrator` (legacy v1 pipeline) | Replaced by `MetacognitiveBrain` + LangGraph |
+---
+
+## 29. Guidelines Manager (The Learning Loop Read Authority)
+* **File:** `src/core/guidelines_manager.py` — Class: `GuidelinesManager`; singleton: `app_state.guidelines_manager`
+* **Purpose:** The **single read authority** for `system_guidelines.json`. Provides async-safe, mtime-cached access to active behavioral rules for `generate_answer()`.
+* **How it Works:**
+  - Loaded synchronously at `__init__` (before the event loop starts)
+  - mtime-based cache: checks file modification time at most once per TTL (default: 60s) — no I/O on cache hits
+  - `get_relevant_rules(query_type, token_budget=150)` scores rules by intent match + confidence, returns hardware-capped list (5 rules for 4B models, 7 for 8B)
+  - `force_reload()` bypasses TTL — called by `ReflectionAgent` after every successful write
+  - Token budget: 150 tokens hard ceiling (1 token ≈ 4 chars heuristic)
+  - `asyncio.Lock` ensures coroutine safety; file I/O delegated to `run_in_executor`
+  - **Schema migration** (`run_schema_migration()`) converts v1 flat string lists → v2 rich objects at startup (backup-first, atomic rename)
+* **📥 Listens To (Inputs):** `generate_answer()` in `MetacognitiveBrain` (every query); `force_reload()` from `ReflectionAgent` (after rule write)
+* **📤 Reports To (Outputs):** `relevant_rules` list → `guidelines_block` injected into LLM system prompt in `generate_answer()`
+* **Admin observability:** `GET /admin/guidelines` endpoint returns all rules (embedding fields stripped) sorted by confidence
 
 ---
 

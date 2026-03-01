@@ -15,7 +15,7 @@
 # dependency. pip may pull in CPU torch when installing them.
 # start.bat handles this by force-uninstalling torch AFTER
 # requirements.txt runs, then reinstalling the GPU build.
-sentence-transformers>=2.2.0,<3.0.0
+sentence-transformers>=2.7.0,<3.0.0
 transformers>=4.45.0
 accelerate>=0.26.0
 bitsandbytes>=0.43.0

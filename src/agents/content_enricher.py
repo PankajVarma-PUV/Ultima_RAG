@@ -134,11 +134,22 @@ class ContentEnricher:
             "document": "document"
         }
         category = category_map.get(content_type.lower(), "document")
-        prompt_template = ENRICHMENT_PROMPTS.get(category, ENRICHMENT_PROMPTS["document"])
         
+        if category == "document":
+            logger.info(f"⏭️ Skipping LLM enrichment for document/text: {file_name} (Using raw content)")
+            return raw_content
+
+        prompt_template = ENRICHMENT_PROMPTS.get(category, ENRICHMENT_PROMPTS["document"])
         prompt = prompt_template.format(raw_content=raw_content)
         
-        logger.info(f"✨ Enriching {category} content for: {file_name}")
+        if category == "image":
+            target_model = Config.ollama_multi_model.LIGHTWEIGHT_MODEL
+            target_tokens = Config.ollama_multi_model.LIGHTWEIGHT_MAX_TOKENS
+        else:
+            target_model = Config.ollama_multi_model.HEAVY_MODEL
+            target_tokens = Config.ollama_multi_model.HEAVY_MAX_TOKENS
+
+        logger.info(f"✨ Enriching {category} content for: {file_name} [Model: {target_model}]")
         
         with Timer(f"Content Enrichment ({file_name})"):
             try:
@@ -146,7 +157,8 @@ class ContentEnricher:
                 result = await self.client.generate(
                     prompt, 
                     temperature=0.4, 
-                    max_tokens=Config.ollama_multi_model.HEAVY_MAX_TOKENS
+                    max_tokens=target_tokens,
+                    model=target_model
                 )
                 
                 enriched = result.get("response", "") if isinstance(result, dict) else result

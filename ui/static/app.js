@@ -114,8 +114,9 @@ class UltimaApp {
         this.updateSystemStatus();
         this.connectTelemetry();
 
-        // Auto-refresh status
-        setInterval(() => this.updateSystemStatus(), 30000);
+        // [SOTA] Disable continuous UI polling for /health to avoid console spam.
+        // We now fetch status strictly on-demand (e.g. init, file upload, chat switch).
+        // setInterval(() => this.updateSystemStatus(), 30000);
         console.log("UltimaRAG Metacognitive Core Interface Active.");
     }
 
@@ -694,7 +695,8 @@ class UltimaApp {
         badgePlaceholders.forEach(p => {
             usedSources.add(p.fileName);
             const index = Array.from(usedSources).indexOf(p.fileName) + 1;
-            const replacement = `<sup class="citation-badge" onclick="window.app.openArtifact('${p.fileName.replace(/'/g, "\\'")}')" title="${p.fileName}">[${index}]</sup>`;
+            const safeFile = p.fileName.replace(/'/g, "\\'")
+            const replacement = `<sup class="citation-badge" data-source-file="${p.fileName}" onclick="window.app.openArtifact('${safeFile}', this)" title="${p.fileName}">[${index}]</sup>`;
 
             // SOTA Phase 21: Global Replacement Fix
             html = html.split(p.id).join(replacement);
@@ -712,7 +714,7 @@ class UltimaApp {
             });
 
             const footerItems = Array.from(uniqueSources.values()).map((s, i) => `
-                <div class="source-item" onclick="window.app.openArtifact('${s.replace(/'/g, "\\'")}')">
+                <div class="source-item" data-source-file="${s}" onclick="window.app.openArtifact('${s.replace(/'/g, "\\'")}'.toString(), this)">
                     <span class="source-index">${i + 1}</span>
                     <span class="source-name" title="${s}">${s}</span>
                 </div>
@@ -1189,6 +1191,12 @@ class UltimaApp {
                         this.injectActionButtons(bubble);
                     }
                 }
+                // ── SOURCE EXPLORER: Attach per-response data to wrapper for openArtifact() ──
+                if (data && data.retrieved_fragments && Object.keys(data.retrieved_fragments).length > 0) {
+                    wrapper.dataset.retrievedFragments = JSON.stringify(data.retrieved_fragments);
+                    wrapper.dataset.sourceMap = JSON.stringify(data.source_map || {});
+                }
+                // ────────────────────────────────────────────────────────────────
                 updateMetadata(data);
                 if (thoughtProcessContainer.open) {
                     thoughtProcessContainer.open = false; // Collapse upon finalization for a clean UI
@@ -1738,7 +1746,7 @@ class UltimaApp {
 
     // ── Source Explorer ───────────────────────────────────────────────────────────────────
 
-    async openArtifact(sourceName) {
+    async openArtifact(sourceName, triggerEl = null) {
         const explorer = document.getElementById('sourceExplorer');
         const content = document.getElementById('sourceContent');
         if (!explorer || !content) return;
@@ -1753,11 +1761,6 @@ class UltimaApp {
 
         try {
             const convId = this.state.activeConversation || '';
-            const resp = await fetch(`/api/workspace/files/${encodeURIComponent(sourceName)}/details?conversation_id=${convId}`);
-            const data = await resp.json();
-
-            if (!data.success) throw new Error(data.message || "Failed to retrieve document details");
-
             const ext = sourceName.split('.').pop().toLowerCase();
             const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext);
             const isVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
@@ -1767,6 +1770,42 @@ class UltimaApp {
             const isVisual = isImage || isVideo;
 
             const fileUrl = `/workspace/files/${convId}/view/${encodeURIComponent(sourceName)}`;
+            const downloadUrl = `${fileUrl}?download=true`;
+
+            // ── SOURCE EXPLORER: Attempt to resolve per-response fragments ──────
+            // Walk up the DOM from triggerEl to find the message wrapper that
+            // has data-retrieved-fragments attached by createAiBubble.finalize()
+            let perResponseFragments = null;
+            let isPerResponse = false;
+            if (triggerEl) {
+                const wrapper = triggerEl.closest
+                    ? triggerEl.closest('[data-retrieved-fragments]')
+                    : null;
+                if (wrapper && wrapper.dataset.retrievedFragments) {
+                    try {
+                        const allFragments = JSON.parse(wrapper.dataset.retrievedFragments);
+                        // Find the entry matching sourceName (case-insensitive fallback)
+                        const matchKey = Object.keys(allFragments).find(k =>
+                            k === sourceName || k.toLowerCase() === sourceName.toLowerCase()
+                        );
+                        if (matchKey) {
+                            perResponseFragments = allFragments[matchKey];
+                            isPerResponse = true;
+                        }
+                    } catch (_) { /* ignore JSON parse errors */ }
+                }
+            }
+            // ────────────────────────────────────────────────────────────────────
+
+            // Fetch full metadata only if we need it (non-media types or no per-response data)
+            let data = { success: true, chunks: [], total_chunks: 0, type: 'unknown', metadata: null };
+            if (!isPerResponse || !isMedia) {
+                try {
+                    const resp = await fetch(`/api/workspace/files/${encodeURIComponent(sourceName)}/details?conversation_id=${convId}`);
+                    const fetched = await resp.json();
+                    if (fetched.success) data = fetched;
+                } catch (_) { /* non-fatal — media preview will still work */ }
+            }
 
             // ── Media Preview Block ──
             let mediaHtml = '';
@@ -1782,7 +1821,7 @@ class UltimaApp {
                     <div class="bg-black rounded-xl overflow-hidden">
                         <video controls class="w-full max-h-[300px] rounded-xl" preload="metadata">
                             <source src="${fileUrl}" type="video/${ext === 'mov' ? 'quicktime' : ext}">
-                            <p class="text-white/40 p-4">Your browser doesn’t support inline video. <a href="${fileUrl}" class="text-cyan-400">Download it</a>.</p>
+                            <p class="text-white/40 p-4">Your browser doesn't support inline video. <a href="${downloadUrl}" class="text-cyan-400">Download it</a>.</p>
                         </video>
                     </div>`;
             } else if (isAudio) {
@@ -1794,7 +1833,7 @@ class UltimaApp {
                         </div>
                         <audio controls class="w-full" preload="metadata">
                             <source src="${fileUrl}" type="audio/${ext === 'm4a' ? 'mp4' : ext}">
-                            <p class="text-white/40 text-xs">Your browser doesn’t support inline audio. <a href="${fileUrl}" class="text-cyan-400">Download it</a>.</p>
+                            <p class="text-white/40 text-xs">Your browser doesn't support inline audio. <a href="${downloadUrl}" class="text-cyan-400">Download it</a>.</p>
                         </audio>
                     </div>`;
             } else if (isPdf) {
@@ -1807,22 +1846,47 @@ class UltimaApp {
                     </a>`;
             } else {
                 // Generic doc — show vector identity info
+                const fragCount = isPerResponse
+                    ? (perResponseFragments ? perResponseFragments.length : 0)
+                    : (data.total_chunks || 0);
+                const fragLabel = isPerResponse
+                    ? `${fragCount} retrieved fragment${fragCount !== 1 ? 's' : ''} used in response`
+                    : `${fragCount} indexed fragment${fragCount !== 1 ? 's' : ''}`;
                 mediaHtml = `
                     <div class="p-4 text-xs text-cyan-400/60 font-mono bg-cyan-950/20 border border-white/5 rounded-xl">
-                        <i class="fa-solid fa-microscope mr-2"></i>Vector Identity: ${data.total_chunks || 0} indexed fragments
+                        <i class="fa-solid fa-microscope mr-2"></i>Vector Identity: ${fragLabel}
                     </div>`;
             }
 
+            // ── Fragment Display ──
+            const fragments = isPerResponse ? (perResponseFragments || []) : (data.chunks || []);
+            const fragmentLabel = isPerResponse ? 'Response Fragments' : 'Neural Content Fragments';
+            const SHOW_MORE_THRESHOLD = 600; // chars
+
             let chunksHtml = '';
-            if (data.chunks && data.chunks.length > 0) {
-                chunksHtml = data.chunks.map((chunk, idx) => `
+            if (fragments.length > 0) {
+                chunksHtml = fragments.map((chunk, idx) => {
+                    const text = chunk.text || chunk.content || '';
+                    const score = chunk.score != null ? `<span class="ml-2 text-cyan-400/60">${(chunk.score * 100).toFixed(1)}% match</span>` : '';
+                    const isLong = text.length > SHOW_MORE_THRESHOLD;
+                    const truncated = isLong ? text.slice(0, SHOW_MORE_THRESHOLD) + '…' : text;
+                    const rendered = window.marked ? marked.parse(truncated) : truncated;
+                    const fullRendered = isLong ? (window.marked ? marked.parse(text) : text) : null;
+                    const showMoreId = `frag-${idx}-${Date.now()}`;
+                    return `
                     <div class="mb-4 p-4 bg-white/5 rounded-xl border border-white/5 hover:border-cyan-500/20 transition-all text-xs leading-relaxed">
                         <div class="flex items-center gap-2 mb-2 opacity-40 font-bold uppercase tracking-widest text-[9px]">
-                            <span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span> Fragment ${idx + 1}
+                            <span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span> Fragment ${idx + 1}${score}
                         </div>
-                        ${window.marked ? marked.parse(chunk.text) : chunk.text}
-                    </div>
-                `).join('');
+                        <div id="${showMoreId}-short">${rendered}</div>
+                        ${isLong ? `
+                        <div id="${showMoreId}-full" style="display:none">${fullRendered}</div>
+                        <button class="mt-2 text-[10px] text-cyan-400/70 hover:text-cyan-300 transition-colors"
+                            onclick="(function(b){const s=document.getElementById('${showMoreId}-short');const f=document.getElementById('${showMoreId}-full');const show=s.style.display!=='none';s.style.display=show?'none':'';f.style.display=show?'':'none';b.textContent=show?'Show less':'Show more';})(this)">
+                            Show more
+                        </button>` : ''}
+                    </div>`;
+                }).join('');
             } else {
                 chunksHtml = `<div class="opacity-30 italic text-xs py-4 text-center">No textual fragments extracted for this asset.</div>`;
             }
@@ -1839,9 +1903,14 @@ class UltimaApp {
                             '<i class="fa-solid fa-file-shield text-emerald-400"></i> Grounded Context'}
                             </div>
                         </div>
-                        <button onclick="document.getElementById('sourceExplorer').classList.add('translate-x-full')" class="p-2 hover:bg-white/10 rounded-full transition-colors">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <a href="${downloadUrl}" title="Download" class="p-2 hover:bg-white/10 rounded-full transition-colors text-white/60 hover:text-white">
+                                <i class="fa-solid fa-download text-sm"></i>
+                            </a>
+                            <button onclick="document.getElementById('sourceExplorer').classList.add('translate-x-full')" class="p-2 hover:bg-white/10 rounded-full transition-colors">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Media / Preview Block -->
@@ -1852,7 +1921,8 @@ class UltimaApp {
                     <!-- Neural Content Fragments -->
                     <div class="artifact-fragments">
                         <div class="text-[10px] uppercase font-bold tracking-widest text-white/30 mb-4 flex items-center gap-2">
-                            <i class="fa-solid fa-brain text-[8px]"></i> Neural Content Fragments
+                            <i class="fa-solid fa-brain text-[8px]"></i> ${fragmentLabel}
+                            ${isPerResponse ? '<span class="ml-2 px-1.5 py-0.5 bg-cyan-500/20 text-cyan-300 rounded text-[9px] normal-case font-normal">This response</span>' : ''}
                         </div>
                         ${chunksHtml}
                     </div>
@@ -1862,7 +1932,8 @@ class UltimaApp {
                         <div class="space-y-2">
                             <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Status</span><span class="text-green-400">Grounded</span></div>
                             <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Persistence</span><span class="text-cyan-400">Converged</span></div>
-                            <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Type</span><span class="text-white">${data.type || 'Unknown'}</span></div>
+                            <div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Type</span><span class="text-white">${data.type || ext.toUpperCase() || 'Unknown'}</span></div>
+                            ${isPerResponse ? `<div class="flex justify-between text-[11px] font-mono"><span class="opacity-40">Fragment Scope</span><span class="text-cyan-400">Per-Response</span></div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -1872,6 +1943,7 @@ class UltimaApp {
             content.innerHTML = `<div class="text-red-400 p-8 border border-red-500/20 bg-red-500/5 rounded-xl">Error staging artifact: ${e.message}</div>`;
         }
     }
+
 
     // Deprecated: kept in case referenced from elsewhere
     async triggerPivotSearch(sourceName) {

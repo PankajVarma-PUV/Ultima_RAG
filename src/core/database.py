@@ -584,7 +584,7 @@ class UltimaRAGDatabase:
         try:
             msg_table = self.conn.open_table("messages")
             query = msg_table.search(query_vector)
-            if conversation_id:
+            if conversation_id is not None:
                 query = query.where(f"conversation_id = '{conversation_id}'")
             all_results.extend(query.limit(limit).to_list())
         except Exception as e:
@@ -600,7 +600,7 @@ class UltimaRAGDatabase:
                 # If vectors aren't in archives, we might need a separate mechanism.
                 # For now, we fetch recent archives.
                 query = arch_table.search()
-                if conversation_id:
+                if conversation_id is not None:
                     query = query.where(f"conversation_id = '{conversation_id}'")
                 
                 arch_results = query.limit(limit).to_list()
@@ -621,7 +621,7 @@ class UltimaRAGDatabase:
             if "knowledge_distillation" in self.conn.table_names():
                 know_table = self.conn.open_table("knowledge_distillation")
                 query = know_table.search()
-                if conversation_id:
+                if conversation_id is not None:
                     query = query.where(f"conversation_id = '{conversation_id}'")
                     
                 know_results = query.limit(limit).to_list()
@@ -794,7 +794,7 @@ class UltimaRAGDatabase:
         """Fetch the total count of document chunks in the knowledge base, optionally filtered by conversation."""
         try:
             table = self.conn.open_table("knowledge_base")
-            if conversation_id:
+            if conversation_id is not None:
                 return len(table.search().where(f"conversation_id = '{conversation_id}'").to_list())
             return table.count_rows()
         except Exception as e:
@@ -828,7 +828,7 @@ class UltimaRAGDatabase:
         if project_id:
             where_clauses.append(f"project_id = '{project_id}'")
             
-        if conversation_id:
+        if conversation_id is not None:
             where_clauses.append(f"conversation_id = '{conversation_id}'")
             
         if file_names:
@@ -900,7 +900,7 @@ class UltimaRAGDatabase:
         table = self.conn.open_table("conversation_assets")
         
         where_clause = f"file_hash = '{file_hash}'"
-        if conversation_id:
+        if conversation_id is not None:
             where_clause += f" AND conversation_id = '{conversation_id}'"
             
         results = table.search().where(where_clause).limit(1).to_list()

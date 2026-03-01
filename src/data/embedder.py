@@ -20,6 +20,7 @@ Deterministic embedder with caching for reproducible retrieval.
 """
 
 import pickle
+import threading
 from pathlib import Path
 from typing import List, Dict, Union, Optional
 import numpy as np
@@ -34,6 +35,11 @@ from ..core.utils import logger, set_seed, get_deterministic_hash
 # DETERMINISTIC EMBEDDER
 # =============================================================================
 
+# Singleton — BAAI/bge-m3 loads ONCE into CPU RAM, never again.
+# Thread-safe via double-checked locking. Device is always cpu.
+_embedder_instance: Optional["DeterministicEmbedder"] = None
+_embedder_lock = threading.Lock()
+
 class DeterministicEmbedder:
     """
     Embedding generator with caching for deterministic outputs.
@@ -45,16 +51,23 @@ class DeterministicEmbedder:
         model_name: str = EmbeddingConfig.MODEL_NAME,
         cache_path: Optional[Path] = None,
         use_cache: bool = EmbeddingConfig.CACHE_EMBEDDINGS,
-        device: Optional[str] = None
+        device: Optional[str] = "cpu"
     ):
         """
         Initialize embedder with model and cache.
-        
+
+        ARCHITECTURE LAW: device MUST default to 'cpu'.
+        The primary Ollama LLM owns all GPU VRAM on the 6GB card.
+        Auto-selecting CUDA here would cause OOM during LLM inference.
+        Only set device='cuda' explicitly if running on a dedicated
+        embedding GPU (separate from the LLM GPU).
+
         Args:
             model_name: Sentence-transformers model name or path
             cache_path: Path to embedding cache file
             use_cache: Whether to cache embeddings
-            device: Device to use ('cuda', 'cpu', or None for auto)
+            device: Device to use ('cpu' default; only override to 'cuda'
+                    if you have a dedicated embedding GPU)
         """
         # Set seed for determinism
         set_seed(DeterministicConfig.RANDOM_SEED)
@@ -212,21 +225,43 @@ class DeterministicEmbedder:
 def get_embedder(
     model_name: Optional[str] = None,
     use_cache: bool = True
-) -> DeterministicEmbedder:
+) -> "DeterministicEmbedder":
     """
-    Get a configured embedder instance.
-    
-    Args:
-        model_name: Model to use (default from config)
-        use_cache: Whether to use caching
-    
-    Returns:
-        Configured DeterministicEmbedder instance
+    Returns singleton DeterministicEmbedder.
+    BAAI/bge-m3 loads ONCE into CPU RAM on first call.
+    Subsequent calls return the cached instance immediately.
+    Thread-safe via double-checked locking.
+    ARCHITECTURE LAW: device='cpu' always — 6GB VRAM is for LLM.
     """
-    return DeterministicEmbedder(
-        model_name=model_name or EmbeddingConfig.MODEL_NAME,
-        use_cache=use_cache
-    )
+    global _embedder_instance
+    if _embedder_instance is None:
+        with _embedder_lock:
+            if _embedder_instance is None:
+                logger.info(
+                    "DeterministicEmbedder: First load — "
+                    "model loading into CPU RAM (one-time only)"
+                )
+                _embedder_instance = DeterministicEmbedder(
+                    model_name=model_name or EmbeddingConfig.MODEL_NAME,
+                    use_cache=use_cache,
+                    device="cpu"
+                )
+                logger.info("DeterministicEmbedder: Cached as singleton")
+    else:
+        # Warn if a different model was requested (silently ignored)
+        if model_name is not None:
+            current_model = getattr(
+                _embedder_instance,
+                "model_name",
+                EmbeddingConfig.MODEL_NAME
+            )
+            if model_name != current_model:
+                logger.warning(
+                    f"get_embedder(): model '{model_name}' requested "
+                    f"but singleton already holds '{current_model}'. "
+                    f"Returning existing instance — model cannot change."
+                )
+    return _embedder_instance
 
 
 def embed_chunks(

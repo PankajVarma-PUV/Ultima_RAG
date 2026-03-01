@@ -23,15 +23,31 @@ import io
 import json
 import uuid
 import asyncio
+import logging
 from pathlib import Path
 from typing import List, Optional, Any, Dict
 from contextlib import asynccontextmanager
+
+# --- SOTA Endpoint Muting Filter ---
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not record.args or len(record.args) < 3:
+            return True
+        endpoint = str(record.args[2])
+        # Mute health and background workspace polling endpoints
+        if endpoint.startswith("/health") or endpoint.startswith("/api/workspace/files"):
+            return False
+        return True
+
+# Apply the filter strictly to Uvicorn's access logger
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+# -----------------------------------
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Response, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
 from starlette.requests import Request
 from pydantic import BaseModel
 
@@ -668,6 +684,8 @@ async def stream_query(request: QueryRequest):
                         'agent_type': result.get('intent'),
                         'ui_hints': result.get('ui_hints'),
                         'conversation_id': result.get('conversation_id'),
+                        'retrieved_fragments': result.get('retrieved_fragments', {}),
+                        'source_map': result.get('source_map', {}),
                     }
                     yield f"data: {json.dumps(final_data, ensure_ascii=False)}\n\n"
             
@@ -1187,20 +1205,19 @@ async def upload_file(
 
 @app.get("/chunks")
 async def list_chunks(limit: int = 10):
-    """List indexed chunks (for debugging)"""
-    chunks = app_state.chunks[:limit]
-    return {
-        "total": len(app_state.chunks),
-        "showing": len(chunks),
-        "chunks": [
-            {
-                "chunk_id": c.get("chunk_id"),
-                "source": c.get("source"),
-                "text_preview": c.get("text", "")[:200] + "..."
-            }
-            for c in chunks
-        ]
-    }
+    """List indexed chunks count (for debugging). Direct listing uses LanceDB search."""
+    return JSONResponse(
+        status_code=200,
+        content={
+            "chunks": [],
+            "count": 0,
+            "message": (
+                "Direct chunk listing is not available in the current "
+                "LanceDB backend. Use POST /query/stream to retrieve "
+                "document content, or POST /upload to add new documents."
+            )
+        }
+    )
 
 
 @app.post("/query/unified")
@@ -1399,7 +1416,9 @@ async def unified_query(
                     'processed_files': processed_files,
                     'agent_type': intent,
                     'confidence_score': final_result.get('confidence_score'),
-                    'ui_hints': final_result.get('ui_hints')
+                    'ui_hints': final_result.get('ui_hints'),
+                    'retrieved_fragments': final_result.get('retrieved_fragments', {}),
+                    'source_map': final_result.get('source_map', {})
                 }
                 yield f"data: {json.dumps(result_payload, ensure_ascii=False)}\n\n"
                 
@@ -1467,18 +1486,22 @@ async def get_workspace_files(conversation_id: str):
 
 
 @app.get("/workspace/files/{conversation_id}/view/{file_name:path}")
-async def view_workspace_file(conversation_id: str, file_name: str):
-    """Serve an uploaded file for viewing in the browser."""
+async def view_workspace_file(conversation_id: str, file_name: str, download: bool = False):
+    """Serve an uploaded file for viewing in the browser, or as a download."""
     import mimetypes
     file_path = get_file_path(conversation_id, file_name)
     if not file_path or not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
     mime_type, _ = mimetypes.guess_type(str(file_path))
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{file_name}"'
     return FileResponse(
         path=str(file_path),
         media_type=mime_type or "application/octet-stream",
-        filename=file_name
+        filename=file_name,
+        headers=headers
     )
 
 
