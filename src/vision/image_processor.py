@@ -26,7 +26,7 @@ SOTA Features:
 import os
 import json
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable
 from PIL import Image
 import torch
 
@@ -55,9 +55,15 @@ class ImageProcessor:
         if self.ocr_reader is None:
             try:
                 import easyocr
+                
+                # SOTA VRAM Management: Clear cache before initializing EasyOCR
+                # This ensures the 6GB card can fit both Qwen-VL and EasyOCR components
+                if torch.cuda.is_available():
+                    logger.info("EasyOCR Optimization: Clearing CUDA cache for 6GB VRAM profile...")
+                    torch.cuda.empty_cache()
+
                 logger.info("Initializing EasyOCR reader...")
                 # Enable GPU acceleration only if CUDA is available
-                # Logic: We use the same 'Force GPU' logic if set in environment
                 force_gpu = os.getenv("Ultima_FORCE_GPU", "false").lower() == "true"
                 cuda_available = torch.cuda.is_available() or force_gpu
                 
@@ -67,6 +73,9 @@ class ImageProcessor:
                 # SOTA: Multi-language 'Global Core' configuration
                 self.ocr_reader = easyocr.Reader(['en', 'fr', 'es', 'de', 'it', 'pt'], gpu=cuda_available)
                 logger.info(f"EasyOCR reader initialized (GPU={cuda_available})")
+                
+                if cuda_available:
+                    logger.info("EasyOCR: CUDA Cores utilized successfully.")
             except ImportError:
                 logger.warning("easyocr not installed. OCR stage will be skipped.")
                 return None
@@ -75,10 +84,11 @@ class ImageProcessor:
                 return None
         return self.ocr_reader
 
-    async def _process_tiled(self, img: Image.Image) -> str:
+    async def _process_tiled(self, img: Image.Image, check_abort_fn: Optional[Callable] = None) -> str:
         """
         SOTA Tiled Perception (UltimaRAG Guard).
         Splits image into 2x2 grid and processes tiles SEQUENTIALLY to save VRAM.
+        Now upgraded to perform High-Fidelity Knowledge Extraction directly.
         """
         w, h = img.size
         mid_w, mid_h = w // 2, h // 2
@@ -94,12 +104,22 @@ class ImageProcessor:
         tile_descriptions = []
         quad_labels = ["Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right"]
         
+        # SOTA: Unified Enrichment Prompt for VLM
+        ENRICH_PROMPT = """You are **UltimaRAG's Knowledge Base Architect**.
+Describe this image quadrant with absolute precision. Extract all factual data, visual entities, and relationships. 
+Format as a standalone high-fidelity knowledge segment. Output ONLY the segment."""
+
         for i, box in enumerate(quads):
+            # ── STRICT ABORT CHECK: check between tiles ──
+            if check_abort_fn and check_abort_fn():
+                logger.info(f"Abort signaled during tiled processing at {quad_labels[i]}. Terminating.")
+                break
+
             tile = img.crop(box)
-            logger.info(f"Vision-HD: Processing {quad_labels[i]} tile...")
+            logger.info(f"Vision-HD: Processing {quad_labels[i]} tile with SOTA Enrichment...")
             
             # Process tile sequentially
-            desc = await self.vision_agent.describe_image(tile, prompt="Describe the details and text in this specific quadrant of the image.")
+            desc = await self.vision_agent.describe_image(tile, prompt=ENRICH_PROMPT)
             if desc and not desc.startswith("Error"):
                 tile_descriptions.append(f"[{quad_labels[i]}]: {desc}")
             
@@ -112,7 +132,7 @@ class ImageProcessor:
             
         return " | ".join(tile_descriptions)
 
-    async def process(self, file_path: str) -> List[Dict]:
+    async def process(self, file_path: str, check_abort_fn: Optional[Callable] = None) -> List[Dict]:
         """
         Multimodal image processing flow:
         1. Preprocessing (Resize to max 1280px long-edge)
@@ -165,11 +185,19 @@ class ImageProcessor:
 
             async def run_vision():
                 try:
+                    # SOTA: Unified Enrichment Prompt for VLM phase
+                    # This allows skipping the separate LLM enrichment pass for images.
+                    SYSTEM_PROMPT = """You are **UltimaRAG's Knowledge Base Architect**.
+Systematically transform this asset into a high-fidelity Knowledge Base segment. 
+Identify all factual data, textual elements, and visual relationships. 
+Organization: Descriptive paragraphs. Tone: Authoritative. 
+Output ONLY the enriched knowledge segment."""
+
                     # Trigger "Vision-HD" for complex docs
                     if w > 2000 or h > 2000:
-                        return await self._process_tiled(img_resized)
+                        return await self._process_tiled(img_resized, check_abort_fn=check_abort_fn)
                     else:
-                        return await self.vision_agent.describe_image(img_resized)
+                        return await self.vision_agent.describe_image(img_resized, prompt=SYSTEM_PROMPT)
                 except Exception as e:
                     logger.error(f"Vision Agent failed: {e}")
                     return None

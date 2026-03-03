@@ -25,7 +25,7 @@ import time
 import httpx
 import logging
 import asyncio
-from typing import Dict, List, Optional, Any, Union, AsyncGenerator
+from typing import Dict, List, Optional, Any, Union, AsyncGenerator, Callable
 
 from .config import OllamaConfig, Config
 from .utils import logger
@@ -98,11 +98,19 @@ class OllamaClient:
         model: Optional[str] = None,
         response_format: Optional[str] = None,
         system: Optional[str] = None,
-        format: Optional[str] = None
+        format: Optional[str] = None,
+        check_abort_fn: Optional[Callable] = None
     ) -> Union[str, AsyncGenerator[Dict[str, Any], None]]:
         """
         Generate text asynchronously using Ollama.
         """
+        if check_abort_fn and check_abort_fn():
+            logger.info("Abort signaled before Ollama generation. Skipping.")
+            if stream:
+                async def empty_gen(): yield {"done": True, "response": "Aborted"}
+                return empty_gen()
+            return {"response": "Aborted", "done": True}
+
         
         # Build request
         payload = {
@@ -133,9 +141,9 @@ class OllamaClient:
         
         try:
             if stream:
-                return self._generate_stream(payload)
+                return self._generate_stream(payload, check_abort_fn=check_abort_fn)
             else:
-                return await self._generate_sync(payload, fallback_model=Config.ollama_multi_model.LIGHTWEIGHT_MODEL)
+                return await self._generate_sync(payload, fallback_model=Config.ollama_multi_model.LIGHTWEIGHT_MODEL, check_abort_fn=check_abort_fn)
         except httpx.ConnectError:
             raise RuntimeError(
                 f"Cannot connect to Ollama at {self.base_url}. "
@@ -158,8 +166,10 @@ class OllamaClient:
                 logger.error(f"Ollama stream generation failed (no fallback possible): {e}")
                 raise RuntimeError(f"Ollama generation failed: {e}")
     
-    async def _generate_sync(self, payload: Dict, fallback_model: str = None) -> Dict:
+    async def _generate_sync(self, payload: Dict, fallback_model: str = None, check_abort_fn: Optional[callable] = None) -> Dict:
         """Asynchronous generation (non-streaming) - returns {'response': str, 'done_reason': str}"""
+        if check_abort_fn and check_abort_fn(): return {"response": "Aborted", "done": True}
+        
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.base_url}/api/generate",
@@ -175,7 +185,7 @@ class OllamaClient:
                 "done_reason": result.get("done_reason", "stop")
             }
     
-    async def _generate_stream(self, payload: Dict) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _generate_stream(self, payload: Dict, check_abort_fn: Optional[callable] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """Asynchronous streaming generation - yields JSON dicts"""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream("POST", f"{self.base_url}/api/generate", json=payload) as response:
@@ -184,6 +194,12 @@ class OllamaClient:
                     raise RuntimeError(f"Ollama API error {response.status_code}: {error_text.decode('utf-8')}")
                 
                 async for line in response.aiter_lines():
+                    # ── STRICT ABORT CHECK: Terminate stream immediately ──
+                    if check_abort_fn and check_abort_fn():
+                        logger.info("Abort signaled during Ollama stream. Terminating.")
+                        yield {"done": True, "response": "Aborted"}
+                        return
+
                     if line:
                         try:
                             # Ollama streams JSON line-by-line

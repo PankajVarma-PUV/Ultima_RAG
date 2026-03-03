@@ -19,7 +19,7 @@ Manager for Multimodal processing in UltimaRAG.
 Orchestrates between Image, Audio, and Video pipelines.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Callable
 import hashlib
 from pathlib import Path
 
@@ -40,6 +40,8 @@ class MultimodalManager:
         self.audio_proc = AudioProcessor()
         self.video_proc = VideoProcessor()
         self.enricher = ContentEnricher()
+        # SOTA: Atomic Locking to prevent race conditions during parallel uploads
+        self._processing_locks = set()
 
     def get_file_hash(self, file_path: str) -> str:
         """Calculate SHA-256 hash of a file."""
@@ -49,7 +51,7 @@ class MultimodalManager:
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
-    async def process_file(self, conversation_id: str, file_path: str, file_type: str, file_name: str) -> Dict:
+    async def process_file(self, conversation_id: str, file_path: str, file_type: str, file_name: str, precomputed_items: Optional[list] = None, check_abort_fn: Optional[Callable] = None) -> Dict:
         """
         Main entry point for processing a multimodal file.
         Checks registry first to skip processing if possible.
@@ -58,6 +60,16 @@ class MultimodalManager:
         
         # 1. Check Registry (Strictly scoped to same conversation)
         # Goal: If same file in SAME chat, return cached. If same file in NEW chat, re-process.
+        
+        # SOTA: Atomic Lock Check
+        lock_id = f"{conversation_id}_{file_hash}"
+        if lock_id in self._processing_locks:
+            logger.info(f"File {file_name} is currently being processed. Waiting for lock...")
+            import asyncio
+            while lock_id in self._processing_locks:
+                await asyncio.sleep(1.0)
+            logger.info(f"Lock released for {file_name}. Retrying registry check.")
+
         existing_doc = self.db.get_document_by_hash(file_hash, conversation_id=conversation_id)
         
         if existing_doc:
@@ -92,87 +104,111 @@ class MultimodalManager:
 
 
         # 2. Process based on type
-        from ..core.utils import get_file_category
-        normalized_type = get_file_category(file_type)
-        
-        logger.info(f"Processing new {file_type} ({normalized_type}) file: {file_name}")
-        scraped_items = []
-        
-        if normalized_type == 'image':
-            scraped_items = await self.image_proc.process(file_path)
-        elif normalized_type == 'audio':
-            scraped_items = await self.audio_proc.transcribe(file_path)
-        elif normalized_type == 'video':
-            scraped_items = await self.video_proc.process(file_path)
-        else:
-            logger.warning(f"Unsupported multimodal file type: {file_type} (mapped to {normalized_type})")
-            return {"status": "unsupported", "file_name": file_name}
+        if check_abort_fn and check_abort_fn():
+            logger.info(f"Abort signaled before processing {file_name}. Terminating.")
+            return {"status": "aborted", "file_name": file_name}
 
-        # 3. Register and Save
-        file_id = self.db.register_document(
-            file_name=file_name,
-            file_hash=file_hash,
-            file_type=normalized_type,
-            conversation_id=conversation_id,
-            file_path=file_path
-        )
-        
-        # 3a. Save Legacy Scraped Content
-        raw_full_content = []
-        for idx, item in enumerate(scraped_items):
-            content_text = item['content']
-            raw_full_content.append(content_text)
-            self.db.add_scraped_content(
-                file_id=file_id,
-                content=content_text,
-                sub_type=item.get('sub_type', 'text'),
-                chunk_index=idx,
-                timestamp=item.get('timestamp'),
-                page_number=item.get('page_number'),
-                metadata={'type': item.get('type', item.get('sub_type', 'general'))}
-            )
-        
-        # 3b. Unified Enrichment Pipeline (New Architecture: Background Task)
-        enrichment_task = None
+        self._processing_locks.add(lock_id)
         try:
-            # Defensive check: if enriched content already exists for this file_id, skip re-enrichment
-            existing_enriched = self.db.get_enriched_content_by_file_id(file_id)
-            if existing_enriched:
-                logger.info(f"Enriched content already exists for {file_name}, skipping redundant re-enrichment.")
+            from ..core.utils import get_file_category
+            normalized_type = get_file_category(file_type)
+            
+            logger.info(f"Processing new {file_type} ({normalized_type}) file: {file_name}")
+            scraped_items = []
+            
+            if precomputed_items:
+                logger.info(f"Using precomputed items for {file_name} (SOTA Optimization)")
+                scraped_items = precomputed_items
+            elif normalized_type == 'image':
+                scraped_items = await self.image_proc.process(file_path, check_abort_fn=check_abort_fn)
+            elif normalized_type == 'audio':
+                scraped_items = await self.audio_proc.transcribe(file_path, check_abort_fn=check_abort_fn)
+            elif normalized_type == 'video':
+                scraped_items = await self.video_proc.process(file_path, check_abort_fn=check_abort_fn)
             else:
-                import asyncio
-                full_raw_text = "\n\n".join(raw_full_content)
-                
-                # Launch background enrichment and store the task
-                logger.info(f"🚀 Launching background enrichment for: {file_name}")
-                enrichment_task = asyncio.create_task(self._background_enrichment(
+                logger.warning(f"Unsupported multimodal file type: {file_type} (mapped to {normalized_type})")
+                return {"status": "unsupported", "file_name": file_name}
+
+            # 3. Register and Save
+            file_id = self.db.register_document(
+                file_name=file_name,
+                file_hash=file_hash,
+                file_type=normalized_type,
+                conversation_id=conversation_id,
+                file_path=file_path
+            )
+            
+            # 3a. Save Legacy Scraped Content
+            raw_full_content = []
+            for idx, item in enumerate(scraped_items):
+                content_text = item['content']
+                raw_full_content.append(content_text)
+                self.db.add_scraped_content(
                     file_id=file_id,
-                    conversation_id=conversation_id,
-                    full_raw_text=full_raw_text,
-                    normalized_type=normalized_type,
-                    file_name=file_name
-                ))
-        except Exception as e:
-            logger.error(f"Enrichment background trigger failed for {file_name}: {e}")
+                    content=content_text,
+                    sub_type=item.get('sub_type', 'text'),
+                    chunk_index=idx,
+                    timestamp=item.get('timestamp'),
+                    page_number=item.get('page_number'),
+                    metadata={'type': item.get('type', item.get('sub_type', 'general'))}
+                )
+            
+            # 3b. Unified Enrichment Pipeline (New Architecture: Background Task)
+            enrichment_task = None
+            try:
+                # Defensive check: if enriched content already exists for this file_id, skip re-enrichment
+                existing_enriched = self.db.get_enriched_content_by_file_id(file_id)
+                if existing_enriched:
+                    logger.info(f"Enriched content already exists for {file_name}, skipping redundant re-enrichment.")
+                else:
+                    import asyncio
+                    full_raw_text = "\n\n".join(raw_full_content)
+                    
+                    # Launch background enrichment and store the task
+                    logger.info(f"🚀 Launching background enrichment for: {file_name}")
+                    enrichment_task = asyncio.create_task(self._background_enrichment(
+                        file_id=file_id,
+                        conversation_id=conversation_id,
+                        full_raw_text=full_raw_text,
+                        normalized_type=normalized_type,
+                        file_name=file_name,
+                        check_abort_fn=check_abort_fn
+                    ))
+            except Exception as e:
+                logger.error(f"Enrichment background trigger failed for {file_name}: {e}")
 
-        return {
-            "status": "success",
-            "file_id": file_id,
-            "content": scraped_items,
-            "processing_status": "enriching_in_background",
-            "enrichment_task": enrichment_task # SOTA: Allow caller to await or track
-        }
+            return {
+                "status": "success",
+                "file_id": file_id,
+                "content": scraped_items,
+                "processing_status": "enriching_in_background",
+                "enrichment_task": enrichment_task # SOTA: Allow caller to await or track
+            }
 
-    async def _background_enrichment(self, file_id: str, conversation_id: str, full_raw_text: str, normalized_type: str, file_name: str):
+        finally:
+            # Release lock
+            if lock_id in self._processing_locks:
+                self._processing_locks.remove(lock_id)
+
+    async def _background_enrichment(self, file_id: str, conversation_id: str, full_raw_text: str, normalized_type: str, file_name: str, check_abort_fn: Optional[Callable] = None):
         """Helper to run enrichment in the background and persist to DB."""
+        if check_abort_fn and check_abort_fn():
+            logger.info(f"Abort signaled before background enrichment for {file_name}. Terminating.")
+            return
+
         try:
+            # ── STRICT CHECK: Before LLM Enrichment ──
+            if check_abort_fn and check_abort_fn(): return
+            
             enriched_text = await self.enricher.enrich_content(
                 raw_content=full_raw_text,
                 content_type=normalized_type,
-                file_name=file_name
+                file_name=file_name,
+                check_abort_fn=check_abort_fn
             )
             
-            # Store in Enriched Content table
+            # ── STRICT CHECK: Before DB Save ──
+            if check_abort_fn and check_abort_fn(): return
             self.db.add_enriched_content(
                 file_id=file_id,
                 conversation_id=conversation_id,
@@ -185,6 +221,8 @@ class MultimodalManager:
             
             # SOTA: Index Enriched Content for RAG
             # This turns the elite narrative into searchable chunks in the knowledge_base
+            if check_abort_fn and check_abort_fn(): return
+            
             logger.info(f"Indexing fresh enrichment for {file_name} in chat {conversation_id}")
             self.db.add_knowledge_from_text(
                 text=enriched_text,

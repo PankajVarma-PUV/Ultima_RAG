@@ -21,13 +21,11 @@ from .config import Config
 from .utils import logger
 
 # ---------------------------------------------------------------------------
-# MemGPT Token Budget Constants (Gemma3:4b = 2048 total context)
+# MemGPT Token Budget Constants (Dynamic Configuration)
 # ---------------------------------------------------------------------------
-# We reserve 80% of the input window for active history.
-# The remaining 20% is reserved for system prompt + RAG chunks.
-# With MAX_INPUT_TOKENS = 2048:
-#   - HISTORY_THRESHOLD = 1638 tokens  (80%)
-#   - Reserved for prompt/chunks = ~410 tokens   (20%)
+# The memory system auto-scales based on the MAX_INPUT_TOKENS set in .env.
+# It reserves a percentage (MEMGPT_OVERFLOW_RATIO) for active history.
+# The remainder is reserved for system prompts, RAG chunks, and multimodal data.
 # ---------------------------------------------------------------------------
 
 class MemoryManager:

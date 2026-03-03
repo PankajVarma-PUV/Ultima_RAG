@@ -49,6 +49,9 @@ SCHEMA_REGISTRY = {
         pa.field("folder_id", pa.string()),
         pa.field("user_id", pa.string()),
         pa.field("name", pa.string()),
+        pa.field("chunks_count", pa.int32()),
+        pa.field("assets_count", pa.int32()),
+        pa.field("indexed_files_count", pa.int32()),
         pa.field("active_tokens", pa.int32()),
         pa.field("is_archived", pa.bool_()),
         pa.field("model_config", pa.string()),
@@ -169,6 +172,14 @@ SCHEMA_REGISTRY = {
         pa.field("text", pa.string()),
         pa.field("vector", pa.list_(pa.float32(), Config.embedding.DIMENSION)),
         pa.field("metadata", pa.string()),
+        pa.field("created_at", pa.string())
+    ]),
+    "knowledge_distillation": pa.schema([
+        pa.field("id", pa.string()),
+        pa.field("conversation_id", pa.string()),
+        pa.field("extracted_fact", pa.string()),
+        pa.field("domain", pa.string()),
+        pa.field("confidence", pa.float32()),
         pa.field("created_at", pa.string())
     ])
 }
@@ -291,6 +302,17 @@ class UltimaRAGDatabase:
                     pa_table = pa.Table.from_pandas(df, schema=target_schema)
                     self.conn.create_table(table_name, data=pa_table, mode="overwrite")
                     logger.info(f"✅ Table '{table_name}' migrated/repaired successfully with explicit schema.")
+                    
+                    # SOTA: Backfill Mission (Proactive Sync for Legacy Data)
+                    if table_name == "conversations" and "chunks_count" in [f.name for f in fields_to_fix]:
+                        logger.info("⚡ Backfilling statistics for existing conversations...")
+                        for conv_id in df['id'].unique():
+                            try:
+                                self.sync_conversation_stats(conv_id)
+                            except Exception as sync_err:
+                                logger.warning(f"Failed to backfill stats for {conv_id}: {sync_err}")
+                        logger.info("✅ Conversation statistics backfilled successfully.")
+                        
                 except Exception as pyerr:
                     logger.error(f"❌ PyArrow Table conversion failed for '{table_name}': {pyerr}")
                     # Fallback to direct DF if conversion fails (though it likely won't if types are aligned)
@@ -381,7 +403,12 @@ class UltimaRAGDatabase:
             "folder_id": folder_id or "root",
             "user_id": "default",
             "name": name,
+            "chunks_count": 0,
+            "assets_count": 0,
+            "indexed_files_count": 0,
             "active_tokens": 0,
+            "is_archived": False,
+            "model_config": "{}",
             "created_at": now,
             "updated_at": now
         }])
@@ -669,6 +696,7 @@ class UltimaRAGDatabase:
             "metadata": json.dumps(metadata, ensure_ascii=False),
             "created_at": datetime.utcnow().isoformat()
         }])
+        self.sync_conversation_stats(conversation_id)
 
     def add_knowledge_from_text(self, text: str, file_name: str, conversation_id: str, 
                                project_id: str = "default", metadata: Dict = {}):
@@ -735,6 +763,8 @@ class UltimaRAGDatabase:
         except Exception as e:
             logger.warning(f"Could not build FTS index (ensure tantivy is installed): {e}")
 
+        self.sync_conversation_stats(conversation_id)
+
     def delete_last_message(self, conversation_id: str, role: str, sqlite_db: Optional[Any] = None) -> bool:
         """Delete the most recent message with specified role in a conversation (Unified)."""
         deleted = False
@@ -790,40 +820,121 @@ class UltimaRAGDatabase:
         except Exception as e:
             logger.warning(f"Could not build FTS index (ensure tantivy is installed): {e}")
 
+        # Sync first conversation_id if available
+        if processed_chunks:
+            self.sync_conversation_stats(processed_chunks[0]['conversation_id'])
+
     def get_knowledge_count(self, conversation_id: Optional[str] = None) -> int:
         """Fetch the total count of document chunks in the knowledge base, optionally filtered by conversation.
            Includes both text chunks and media assets (images).
         """
         try:
-            total_count = 0
+            # 1. Isolation Guard: New chats (empty string) always start with 0
+            if conversation_id == "":
+                return 0
             
-            # 1. Count text chunks from knowledge_base
+            cached_count = 0
+            found_in_cache = False
+            
+            # 2. Cache Hint: Try fast O(1) lookup from metadata
+            if conversation_id:
+                conv = self.get_conversation(conversation_id)
+                if conv:
+                    cached_count = conv.get("chunks_count", 0)
+                    found_in_cache = True
+            
+            # 3. Validation & Self-Healing: Hard Real-Time Check from LanceDB
             kb_table = self.conn.open_table("knowledge_base")
-            if conversation_id is not None:
-                total_count += len(kb_table.search().where(f"conversation_id = '{conversation_id}'").to_list())
-            else:
-                total_count += kb_table.count_rows()
-                
-            # 2. Count media items (e.g. images without text chunks) from conversation_assets
-            # We assume non-text parsed assets (like plain images) contribute as 1 "chunk" conceptually.
-            import pyarrow as pa
+            
+            # 3a. Count Text Chunks (Robust Scanner Count)
+            actual_kb_count = 0
+            try:
+                # Use scanner for 100% accuracy during index updates
+                filter_str = f"conversation_id = '{conversation_id}'" if conversation_id else None
+                scanner = kb_table.to_lance().scanner(filter=filter_str, columns=["id"]) if filter_str else kb_table.to_lance().scanner(columns=["id"])
+                actual_kb_count = len(scanner.to_table())
+            except Exception as scan_err:
+                logger.warning(f"SOTA Scanner KB count failed: {scan_err}")
+                actual_kb_count = kb_table.count_rows(filter=f"conversation_id = '{conversation_id}'") if conversation_id else kb_table.count_rows()
+
+            # 3b. Count Image Assets (Multimodal support)
+            actual_assets_count = 0
             if "conversation_assets" in self.conn.table_names():
                 assets_table = self.conn.open_table("conversation_assets")
-                if conversation_id is not None:
-                    # Only add assets that are purely visual (images) 
-                    # If they were PDFs, they'd have chunks in knowledge_base, but we can just count all assets 
-                    # to be safe, or specifically filter if needed. Let's count media types.
-                    assets = assets_table.search().where(f"conversation_id = '{conversation_id}'").to_list()
-                    image_assets = [a for a in assets if a.get('file_type', '').startswith('image/')]
-                    total_count += len(image_assets)
-                else:
-                    assets_df = assets_table.to_pandas()
-                    total_count += len(assets_df[assets_df['file_type'].str.startswith('image/', na=False)])
+                try:
+                    asset_filter = "file_type LIKE 'image/%'"
+                    if conversation_id:
+                        asset_filter = f"conversation_id = '{conversation_id}' AND ({asset_filter})"
                     
-            return total_count
+                    asset_scanner = assets_table.to_lance().scanner(filter=asset_filter, columns=["id"])
+                    actual_assets_count = len(asset_scanner.to_table())
+                except Exception:
+                    pass
+            
+            real_total = actual_kb_count + actual_assets_count
+            
+            # 4. Detect drift and trigger background sync if needed
+            if (found_in_cache and cached_count != real_total) or (not found_in_cache and conversation_id):
+                # Significant drift logging
+                if (real_total > 0 and cached_count == 0) or (real_total == 0 and cached_count > 0):
+                    logger.info(f"🚨 SOTA Integrity Drift detected for {conversation_id[:8] if conversation_id else 'global'}: real={real_total}, cached={cached_count}. Healing...")
+                
+                if conversation_id:
+                    import threading
+                    threading.Thread(target=self.sync_conversation_stats, args=(conversation_id,), daemon=True).start()
+                
+            return real_total if real_total > 0 else cached_count
+            
         except Exception as e:
             logger.error(f"Error getting knowledge count: {e}")
             return 0
+
+    def sync_conversation_stats(self, conversation_id: str):
+        """SOTA Synchronizer: Proactively updates conversation statistics for lightning-fast retrieval."""
+        if not conversation_id or conversation_id == "":
+            return
+            
+        try:
+            # SOTA: Guard - Ensure the conversation record exists first
+            self.ensure_conversation(conversation_id)
+            
+            # 1. Count Knowledge Chunks
+            kb_table = self.conn.open_table("knowledge_base")
+            # SOTA Robust Sync: Use scanner to ensure absolute correctness during background healing
+            scanner_table = kb_table.to_lance().scanner(
+                filter=f"conversation_id = '{conversation_id}'",
+                columns=["id"]
+            ).to_table()
+            chunks_count = len(scanner_table)
+            
+            # 2. Count Assets and Unique Indexed Files
+            assets_count = 0
+            unique_files = 0
+            if "conversation_assets" in self.conn.table_names():
+                assets_table = self.conn.open_table("conversation_assets")
+                assets_count = assets_table.count_rows(filter=f"conversation_id = '{conversation_id}'")
+                
+                # Unique files requires a scan
+                pa_table = assets_table.to_lance().scanner(
+                    filter=f"conversation_id = '{conversation_id}'",
+                    columns=["file_name"]
+                ).to_table()
+                unique_files = len(pa_table.column("file_name").unique())
+            
+            # 3. Update Conversation Record
+            conv_table = self.conn.open_table("conversations")
+            conv_table.update(
+                where=f"id = '{conversation_id}'",
+                values={
+                    "chunks_count": int(chunks_count),
+                    "assets_count": int(assets_count),
+                    "indexed_files_count": int(unique_files),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            )
+            logger.info(f"SOTA Sync: {conversation_id[:8]} -> {chunks_count} chunks, {unique_files} files.")
+        except Exception as e:
+            logger.error(f"Failed to sync conversation stats for {conversation_id}: {e}")
 
     def search_knowledge(self, query_vector: List[float], query_text: str, project_id: Optional[str] = None, 
                          conversation_id: Optional[str] = None, file_names: Optional[List[str]] = None, 
@@ -909,6 +1020,7 @@ class UltimaRAGDatabase:
             "file_name": file_name,
             "created_at": datetime.utcnow().isoformat()
         }])
+        self.sync_conversation_stats(conversation_id)
         return asset_id
 
     def add_asset(self, conversation_id: str, file_path: str, file_type: str, file_name: str) -> str:
@@ -1372,11 +1484,21 @@ class UltimaRAGDatabase:
                 logger.info(f"Purged knowledge_base chunks for conversion: {conversation_id}")
             except Exception as e:
                 logger.debug(f"Knowledge purge skipped/failed: {e}")
-            
             return True
         except Exception as e:
             logger.error(f"Error deleting conversation: {e}")
             return False
+
+    def get_distilled_knowledge(self, conversation_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+        """Fetch permanent facts extracted by the distilled knowledge agent."""
+        try:
+            table = self.conn.open_table("knowledge_distillation")
+            query = table.search()
+            if conversation_id:
+                query = query.where(f"conversation_id = '{conversation_id}'")
+            return query.limit(limit).to_list()
+        except:
+            return []
 
     # --- Workspace Tree Logic ---
     def get_workspace_tree(self) -> Dict:

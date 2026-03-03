@@ -20,7 +20,7 @@ Transforms raw extraction data into high-fidelity enriched narratives.
 Single Source of Truth (SSOT) Implementation.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 import json
 from ..core.ollama_client import OllamaClient
 from ..core.utils import logger, Timer
@@ -82,12 +82,13 @@ RAW TRANSCRIPTION INSIGHTS:
 TASK: Transform these raw transcription insights into a polished, high-fidelity Knowledge Base segment.
 
 INSTRUCTIONS:
-1. **Semantic Enhancement**: Turn fragmented transcriptions into a cohesive, meaningful narrative.
-2. **Thematic Organization**: Identify and categorize the main topics or directives discussed.
-3. **Clarity**: Ensure the speaker's intent and tone are captured with authoritative clarity.
-4. **Professional Polish**: Add proper punctuation and logical paragraph breaks.
+1. **Intelligence Synthesis**: Properly combine the time-stamped transcription segments into a rich, naturally flowing narrative.
+2. **Thematic Deep-Dive**: Identify key topics, names, technical terms, and semantic meaning.
+3. **Pacing & Context**: Describe the progression of the audio content, capturing the intent and tone of the discussion or recording.
+4. **Cinematic Detail**: Use a professional, authoritative, and cinematic style to weave the transcript into a cohesive "Intelligence Dossier".
+5. **Sanitization**: Output ONLY the final enriched intelligence. Do NOT use labels like "[0:00] SPEECH:" or "Transcript:".
 
-OUTPUT: The enriched, high-fidelity knowledge segment derived from the audio transcription."""
+OUTPUT: A definitive, well-structured knowledge segment capturing the totality of the audio asset."""
 }
 
 class ContentEnricher:
@@ -104,9 +105,9 @@ class ContentEnricher:
             model_name=self.model_name,
             timeout=enrichment_timeout
         )
-        logger.info(f"ContentEnricher initialized with {self.model_name} | Timeout: {enrichment_timeout}s")
+        logger.debug(f"ContentEnricher initialized with {self.model_name} | Timeout: {enrichment_timeout}s")
 
-    async def enrich_content(self, raw_content: str, content_type: str, file_name: str) -> str:
+    async def enrich_content(self, raw_content: str, content_type: str, file_name: str, check_abort_fn: Optional[Callable] = None) -> str:
         """
         Enrich raw extracted content into a high-fidelity narrative.
         
@@ -114,10 +115,14 @@ class ContentEnricher:
             raw_content: The merged raw extraction data.
             content_type: Type of content ('image', 'video', 'pdf', 'audio', etc.)
             file_name: Name of the original file for context.
+            check_abort_fn: Optional callback to check for abort signal.
             
         Returns:
             Enriched narrative string.
         """
+        if check_abort_fn and check_abort_fn():
+            logger.info(f"Abort signaled before enrichment of {file_name}. Skipping.")
+            return raw_content
         if not raw_content or len(raw_content.strip()) < 20:
             logger.warning(f"Raw content for {file_name} too short to enrich. Using original.")
             return raw_content
@@ -139,6 +144,13 @@ class ContentEnricher:
             logger.info(f"⏭️ Skipping LLM enrichment for document/text: {file_name} (Using raw content)")
             return raw_content
 
+        # SOTA: Detect if the content was already enriched by the native VLM phase
+        # This prevents the 'Double Enrichment' latency found in the code audit.
+        # FIX: We only skip if it's already a high-fidelity dossier, NOT if it's just raw VLM output.
+        if "Intelligence Dossier" in raw_content or "Summary of Video Content" in raw_content:
+            logger.info(f"✨ SOTA Optimization: Skipping LLM enrichment for {file_name} (Content already fully enriched)")
+            return raw_content
+
         prompt_template = ENRICHMENT_PROMPTS.get(category, ENRICHMENT_PROMPTS["document"])
         prompt = prompt_template.format(raw_content=raw_content)
         
@@ -158,7 +170,8 @@ class ContentEnricher:
                     prompt, 
                     temperature=0.4, 
                     max_tokens=target_tokens,
-                    model=target_model
+                    model=target_model,
+                    check_abort_fn=check_abort_fn
                 )
                 
                 enriched = result.get("response", "") if isinstance(result, dict) else result

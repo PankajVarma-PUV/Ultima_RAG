@@ -80,6 +80,11 @@ def get_deterministic_hash(text: str) -> str:
     return hashlib.md5(text.encode()).hexdigest()
 
 
+def calculate_file_hash_from_bytes(content: bytes) -> str:
+    """Calculate SHA-256 hash of file content bytes."""
+    return hashlib.sha256(content).hexdigest()
+
+
 # =============================================================================
 # TEXT PROCESSING UTILITIES
 # =============================================================================

@@ -134,6 +134,8 @@ class HealthResponse(BaseModel):
     status: str
     ready: bool
     chunks_count: int
+    assets_count: Optional[int] = 0
+    indexed_files_count: Optional[int] = 0
     agents: dict
     db_connected: bool = False
 
@@ -349,6 +351,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"⚠️ Schema migration failed (non-fatal): {e}")
 
+    # [B] Multimodal Manager (Singleton)
+    try:
+        from ..vision.manager import MultimodalManager
+        app_state.multimodal_manager = MultimodalManager()
+        logger.info("✅ MultimodalManager initialized.")
+    except Exception as e:
+        logger.error(f"⚠️ MultimodalManager init failed: {e}")
+
     # [C] GuidelinesManager (single read authority for system_guidelines.json)
     try:
         from ..core.guidelines_manager import GuidelinesManager
@@ -380,9 +390,8 @@ async def lifespan(app: FastAPI):
         logger.info("[3/3] Finalizing UltimaRAG SOTA Stack...")
         # Pre-warm Vision/OCR Models to eliminate cold-start latency
         try:
-            from ..vision.manager import MultimodalManager
-            mm_mgr = MultimodalManager()
-            asyncio.create_task(mm_mgr.image_proc.warm_up())
+            if app_state.multimodal_manager:
+                asyncio.create_task(app_state.multimodal_manager.image_proc.warm_up())
         except Exception as e:
             logger.error(f"⚠️ Model warming failed (non-fatal): {e}")
         app_state.ready = True
@@ -477,6 +486,8 @@ async def health_check(conversation_id: Optional[str] = None):
             status="ok",
             ready=status["ready"],
             chunks_count=status["chunks_count"],
+            assets_count=status.get("assets_count", 0),
+            indexed_files_count=status.get("indexed_files_count", 0),
             agents=status["agents"],
             db_connected=app_state.db_connected
         )
@@ -1043,6 +1054,9 @@ async def index_documents(request: IndexRequest):
         app_state.db.add_knowledge(processed_chunks)
         app_state.ready = True
         
+        # SOTA: Force Sync for chunk count integrity
+        app_state.db.sync_conversation_stats(request.conversation_id or "default")
+        
         # SOTA Phase 4: Watchdog Tracking Complete
         if app_state.sqlite_db:
             try:
@@ -1125,13 +1139,12 @@ async def upload_file(
             )
             
             # Process multimodal content
-            from ..vision.manager import MultimodalManager
-            vision_mgr = MultimodalManager()
-            result = await vision_mgr.process_file(
+            result = await app_state.multimodal_manager.process_file(
                 conversation_id=chat_id,
                 file_path=local_path,
                 file_type=filename.split('.')[-1],
-                file_name=file.filename
+                file_name=file.filename,
+                check_abort_fn=lambda: abort_flags.get(chat_id)
             )
             
             return {
@@ -1148,9 +1161,11 @@ async def upload_file(
             
             # Ensure folder exists
             chat_id = conversation_id or "default"
+            # save_upload is a helper in main.py that returns the absolute path
             local_path = save_upload(chat_id, 'pdf', file.filename, content)
             
-            text, image_paths = DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename)
+            # SOTA: Await async extraction and capture metadata
+            text, image_metadata = await DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename, check_abort_fn=lambda: abort_flags.get(chat_id))
             
             # Index text first
             idx_req = IndexRequest(
@@ -1164,27 +1179,51 @@ async def upload_file(
             await index_documents(idx_req)
             
             # Route extracted images to Multimodal Pipeline
-            from ..vision.manager import MultimodalManager
-            vision_mgr = MultimodalManager()
-            for img_path in image_paths:
+            for img_info in image_metadata:
+                img_path = img_info['path']
                 img_name = os.path.basename(img_path)
-                await vision_mgr.process_file(
+                ocr_text = img_info.get('ocr_text', '')
+                
+                # SOTA: Pass precomputed OCR to skip redundant VLM hit
+                await app_state.multimodal_manager.process_file(
                     conversation_id=chat_id,
                     file_path=img_path,
                     file_type=img_name.split('.')[-1],
-                    file_name=img_name
+                    file_name=img_name,
+                    precomputed_items=[{"content": ocr_text, "sub_type": "vision"}] if ocr_text else None,
+                    check_abort_fn=lambda: abort_flags.get(chat_id)
                 )
             
             return {
                 "success": True, 
-                "message": f"Successfully processed {filename}. Extracted {len(image_paths)} images.",
+                "message": f"Successfully processed {filename}. Extracted {len(image_metadata)} images.",
                 "conversation_id": chat_id
             }
         else:
             # Plain text files
-            text = content.decode('utf-8')
+            # SOTA Fix: Ensure text files are registered and scraped for Brain visibility
+            from ..core.utils import calculate_file_hash_from_bytes
+            f_hash = calculate_file_hash_from_bytes(content)
+            
+            chat_id = conversation_id or "default"
+            # Register in assets
+            file_id = app_state.db.register_document(
+                file_name=file.filename,
+                file_hash=f_hash,
+                file_type="txt",
+                conversation_id=chat_id
+            )
+            
+            # Add to scraped_content (Enables FusionExtractor transparency)
+            text = content.decode('utf-8', errors='ignore')
+            app_state.db.add_scraped_content(
+                file_id=file_id,
+                content=text,
+                sub_type="text",
+                metadata={"source": "upload_file_direct"}
+            )
         
-        # 3. Index the document
+        # 3. Index the document (Vector/Hybrid RAG)
         request = IndexRequest(
             texts=[text],
             doc_ids=[file.filename],
@@ -1270,9 +1309,7 @@ async def unified_query(
                     
                     # SOTA: Process multimodal or text
                     if file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg', '.mp4', '.mov', '.webm', '.mkv', '.avi')):
-                        from ..vision.manager import MultimodalManager
-                        vision_mgr = MultimodalManager()
-                        res = await vision_mgr.process_file(chat_id, local_path, file.filename.split('.')[-1], file.filename)
+                        res = await app_state.multimodal_manager.process_file(chat_id, local_path, file.filename.split('.')[-1], file.filename, check_abort_fn=lambda: abort_flags.get(chat_id))
                         if res.get("enrichment_task"):
                             enrichment_tasks.append(res["enrichment_task"])
                     elif file.filename.lower().endswith(('.txt', '.md', '.pdf')):
@@ -1280,28 +1317,44 @@ async def unified_query(
                         text = ""
                         if file.filename.lower().endswith('.pdf'):
                             from ..core.document_processor import DocumentProcessor
-                            text, image_paths = await DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename)
+                            text, image_paths = await DocumentProcessor.extract_from_pdf(chat_id, local_path, file.filename, check_abort_fn=lambda: abort_flags.get(chat_id))
                             
                             # Process extracted images
-                            from ..vision.manager import MultimodalManager
-                            vm = MultimodalManager()
                             for ip in image_paths:
                                 iname = os.path.basename(ip)
-                                res = await vm.process_file(chat_id, ip, iname.split('.')[-1], iname)
+                                res = await app_state.multimodal_manager.process_file(chat_id, ip, iname.split('.')[-1], iname, check_abort_fn=lambda: abort_flags.get(chat_id))
                                 if res.get("enrichment_task"):
                                     enrichment_tasks.append(res["enrichment_task"])
                         else:
                             text = content.decode('utf-8', errors='ignore')
-                        
-                        if text.strip():
-                            idx_req = IndexRequest(
-                                texts=[text],
-                                doc_ids=[file.filename],
-                                metadata=[{"filename": file.filename, "file_name": file.filename, "source": file.filename}],
-                                conversation_id=chat_id,
-                                project_id=project_id
-                            )
-                            await index_documents(idx_req)
+                            
+                            if text.strip():
+                                # SOTA Fix: Register and Scrape text files in Unified Query
+                                from ..core.utils import calculate_file_hash_from_bytes
+                                f_hash = calculate_file_hash_from_bytes(content)
+                                
+                                f_id = app_state.db.register_document(
+                                    file_name=file.filename,
+                                    file_hash=f_hash,
+                                    file_type="txt",
+                                    conversation_id=chat_id
+                                )
+                                
+                                app_state.db.add_scraped_content(
+                                    file_id=f_id,
+                                    content=text,
+                                    sub_type="text",
+                                    metadata={"source": "unified_query_upload"}
+                                )
+                                
+                                idx_req = IndexRequest(
+                                    texts=[text],
+                                    doc_ids=[file.filename],
+                                    metadata=[{"filename": file.filename, "file_name": file.filename, "source": file.filename}],
+                                    conversation_id=chat_id,
+                                    project_id=project_id
+                                )
+                                await index_documents(idx_req)
                     processed_files.append(file.filename)
 
             if abort_flags.get(chat_id):
@@ -2043,86 +2096,64 @@ async def pdf_query_generate(
     collected = []
     try:
         from ..agents.intent_classifier import strip_mentions
-        import json as _json
-
         clean_query = strip_mentions(working_query) if files_list else working_query
 
-        # Inline summarize-intent detection (QueryAnalyzer module archived — dead code)
-        _q_lower = clean_query.lower().strip()
-        is_summarize_intent = any(w in _q_lower for w in ["summarize", "summary", "tldr", "brief", "give me a summary"])
+        # SOTA: Unified Brain Pipeline for PDF Generation
+        # This replaces the broken summarize_intent_generator call
+        generator = await app_state.brain.run(
+            query=clean_query,
+            conversation_id=conversation_id,
+            project_id="default",
+            mentioned_files=files_list,
+            original_query=query,
+            use_web_search=False # Web search disabled for PDF export stability
+        )
 
-        if is_summarize_intent:
-            # Run the Map-Reduce Generator (yields SSE strings)
-            generator = summarize_intent_generator(clean_query, conversation_id, files_list)
-            async for event in generator:
-                if isinstance(event, str) and event.startswith("data: "):
-                    try:
-                        # Slice off "data: " and any trailing whitespace including \n\n
-                        data = _json.loads(event[6:].strip())
-                        stage = data.get("stage")
-                        
-                        if stage == "summarize_file_start":
-                            fn = data.get("file_name", "Document")
-                            collected.append(f"\n\n--- DOCUMENT SUMMARY: {fn} ---\n\n")
-                        elif stage in ("summarize_token", "summary_bubble", "streaming"):
-                            t = data.get("token")
-                            if t is None: t = data.get("summary", "")
-                            collected.append(t)
-                        elif stage == "summarize_file_end":
-                            err = data.get("error")
-                            if err:
-                                collected.append(f"\n[Error processing: {err}]\n")
-                            collected.append("\n\n")
-                        elif stage == "summarize_no_files":
-                            collected.append(data.get("message", "No document context available for summarization."))
-                    except Exception:
-                        pass
-        else:
-            # Normal RAG path (yields dicts)
-            generator = await app_state.brain.run(
-                query=clean_query,
-                conversation_id=conversation_id,
-                project_id="default",
-            )
-            async for chunk in generator:
-                if isinstance(chunk, dict):
-                    stage = chunk.get("stage")
-                    if stage == "streaming":
-                        collected.append(chunk.get("token", ""))
-                    elif stage == "result":
-                        if chunk.get("final_response"):
-                            collected = [chunk.get("final_response", "")]
-                        break
-                elif isinstance(chunk, str):
-                    collected.append(chunk)
+        async for event in generator:
+            if not isinstance(event, dict):
+                continue
+                
+            etype = event.get("type")
+            if etype == "token":
+                collected.append(event.get("token", ""))
+            elif etype == "final":
+                result = event.get("result", {})
+                final_ans = result.get("answer", "")
+                if final_ans:
+                    # If we have a final answer, use it as the definitive response
+                    collected = [final_ans]
+                break
+            elif etype == "status" and event.get("status") == "error":
+                collected.append(f"\n[Error: {event.get('stage')}]\n")
 
     except Exception as e:
-        logger.error(f"PDF query-generate brain error: {e}")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
+        logger.error(f"PDF Query Generation Error: {e}")
+        collected.append(f"\n[System Error: {str(e)}]\n")
 
-    response_text = "".join(collected).strip()
-    if not response_text:
-        raise HTTPException(status_code=500, detail="Brain returned empty response.")
+    final_text = "".join(collected)
+    if not final_text.strip():
+        final_text = "The AI was unable to generate a response for this query. Please ensure your documents are indexed and try a different question."
 
     # Store in session
     session_token = str(uuid.uuid4())
-    db = get_relational_db()
-    conv = db.get_conversation(conversation_id) if db else {}
-    conv_title = (conv or {}).get("title") or (conv or {}).get("name") or "UltimaRAG Export"
+    # db = get_relational_db() # Removed this line as it's no longer used
+    # conv = db.get_conversation(conversation_id) if db else {} # Removed this line as it's no longer used
+    # conv_title = (conv or {}).get("title") or (conv or {}).get("name") or "UltimaRAG Export" # Removed this line as it's no longer used
 
     _pdf_sessions[session_token] = {
         "query": query,
-        "response": response_text,
+        "response": final_text,
         "conversation_id": conversation_id,
         "mentioned_files": files_list,
-        "title": conv_title,
+        # "title": conv_title, # Removed this line as it's no longer used
+        "timestamp": datetime.now().isoformat()
     }
 
     return {
-        "success": True,
+        "success": True, 
         "session_token": session_token,
-        "response_text": response_text,
-        "mentioned_files": files_list,
+        "response_text": final_text,
+        "mentioned_files": files_list
     }
 
 

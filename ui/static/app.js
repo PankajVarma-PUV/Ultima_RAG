@@ -322,6 +322,7 @@ class UltimaApp {
             if (data.success) {
                 this.state.activeConversation = data.conversation_id;
                 await this.loadWorkspace();
+                this.updateSystemStatus();
             }
         } catch (e) { console.error("New Chat Error:", e); }
     }
@@ -329,6 +330,9 @@ class UltimaApp {
     async selectConversation(cid, title) {
         this.state.activeConversation = cid;
         if (this.convTitle) this.convTitle.innerText = title || "Current Inquiry";
+
+        // Immediate UI feedback to show we are switching
+        if (this.statusText) this.statusText.innerText = "System: Syncing...";
 
         try {
             const msgResp = await fetch(`/workspace/conversations/${cid}`);
@@ -338,18 +342,21 @@ class UltimaApp {
 
             if (data.messages && data.messages.length > 0) {
                 data.messages.forEach(msg => {
-                    // SOTA: metadata is now returned as a direct object from the API
                     const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata || '{}') : (msg.metadata || {});
                     this.appendMessage(msg.role, msg.content, meta);
                 });
             } else {
                 this.appendMessage('ai', "Inquiry history initialized.");
             }
+
             this.renderWorkspace();
             await this.loadWorkspaceFiles(); // Load files for this conversation
         } catch (err) {
             console.error("Fetch Error:", err);
             this.appendMessage('ai', "Failed to load conversation history.");
+        } finally {
+            // SOTA Persistence: Always update status at the end of a switch
+            this.updateSystemStatus();
         }
     }
 
@@ -915,6 +922,7 @@ class UltimaApp {
                                     this.state.activeConversation = data.conversation_id;
                                 }
                                 await this.loadWorkspace();
+                                this.updateSystemStatus();
                             } else if (data.stage === 'error') {
                                 this.appendMessage('ai', `**Reasoning Error**: ${data.message}`);
                             }
@@ -1028,6 +1036,7 @@ class UltimaApp {
                                 if (this.state.activeConversation || data.conversation_id) {
                                     await this.loadWorkspace();
                                     await this.loadWorkspaceFiles();
+                                    this.updateSystemStatus();
                                 }
 
                             } else if (data.stage === 'processing') {
@@ -1076,6 +1085,7 @@ class UltimaApp {
                                 }
                                 await this.loadWorkspace();
                                 await this.loadWorkspaceFiles();
+                                this.updateSystemStatus();
 
                             } else if (data.stage === 'error') {
                                 this.hideUnifiedOverlay();
@@ -1182,15 +1192,19 @@ class UltimaApp {
                     // SOTA: Inject RAG Suggested Actions ONLY when:
                     //   – intent is RAG / evidence-based
                     //   – NOT an agentic action response
-                    //   – user had document context
-                    const intent = (data && (data.intent || (data.ui_hints && data.ui_hints.intent) || '')).toUpperCase();
+                    //   – user had document context (actual retrieved knowledge)
+                    const intent = (data && (data.intent || data.agent_type || (data.ui_hints && data.ui_hints.intent) || '')).toUpperCase();
                     const isSummarize = (data && data.agent_type === 'SUMMARIZE') ||
                         intent.includes('SUMMARIZE') ||
                         intent.includes('SUMMARY');
                     const isAgenticAction = ['DEEP_INSIGHT', 'EXECUTIVE_SUMMARY', 'RISK_ASSESSMENT'].includes(intent);
-                    const hasDocContext = this.state.mentionedFiles.length > 0 ||
-                        (this.state.activeConversation && this.state.workspaceFileCount > 0);
-                    if (!isSummarize && !isAgenticAction && hasDocContext) {
+
+                    // SOTA: Use retrieved_fragments as the source of truth for RAG usage
+                    // LOCK 5 (Frontend): Guarantee buttons only appear if actual knowledge was retrieved
+                    const retrievedKnowledge = data && data.retrieved_fragments && Object.keys(data.retrieved_fragments).length > 0;
+                    const isGeneral = intent === 'GENERAL_INTELLIGENCE' || intent === 'UNKNOWN' || intent === 'DIRECT';
+
+                    if (!isSummarize && !isAgenticAction && !isGeneral && retrievedKnowledge) {
                         this.injectActionButtons(bubble);
                     }
                 }
@@ -1678,12 +1692,18 @@ class UltimaApp {
 
     async updateSystemStatus() {
         try {
+            // SOTA Phase 10: Robust State Awareness
+            // Use local activeConversation but fallback to any pending initializing ID if current is empty
             const convId = this.state.activeConversation || '';
             const resp = await fetch(`/health?conversation_id=${convId}`);
             const data = await resp.json();
-            if (this.statusDot) {
-                this.statusDot.className = `w-2 h-2 rounded-full bg-${data.ready ? 'green' : 'yellow'}-500`;
-                this.statusText.innerText = data.ready ? `System: Ready (${data.chunks_count} chunks)` : "System: No Knowledge Indexed";
+
+            if (this.statusDot && this.statusText) {
+                // If it's a new chat (no files), show 'Ready (0 chunks)' instead of 'No Knowledge'
+                this.statusDot.className = `w-2 h-2 rounded-full bg-${data.ready || convId ? 'green' : 'yellow'}-500`;
+
+                const count = data.chunks_count || 0;
+                this.statusText.innerText = `System: Ready (${count} chunks)`;
             }
             if (this.dbDot) {
                 this.dbDot.className = `w-2 h-2 rounded-full bg-${data.db_connected ? 'green' : 'red'}-500`;
@@ -1736,9 +1756,9 @@ class UltimaApp {
                     this.state.activeConversation = null;
                     this.chatLog.innerHTML = "";
                     if (this.convTitle) this.convTitle.innerText = "New Inquiry";
-                    // Optionally start a new chat or leave it empty
                 }
                 await this.loadWorkspace();
+                this.updateSystemStatus();
             } else {
                 alert("Failed to delete conversation: " + (data.detail || "Unknown error"));
             }

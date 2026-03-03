@@ -201,7 +201,10 @@ class QwenVisionAgent:
                 generated_ids = self.model.generate(
                     **inputs, 
                     max_new_tokens=512, # Sufficient for description
-                    do_sample=False,
+                    do_sample=True, # Enable sampling to use temperature/top_p
+                    temperature=0.1, # Smooth yet precise
+                    top_p=0.1,
+                    repetition_penalty=1.1, # Prevent loops
                     use_cache=True
                 )
                 logger.info(f"Qwen2-VL: Generation complete.")

@@ -586,7 +586,12 @@ class MetacognitiveBrain:
                     logger.error(f"[WebBreakout] Exception during Case-2 web search: {web_err}")
             logger.info("Evaluator: No evidence found, setting response_mode to 'internal_llm_weights'")
             telemetry.end_activity(tid, {"mode": "internal_llm_weights", "has_evidence": False})
-            return {"response_mode": "internal_llm_weights"}
+            return {
+                "response_mode": "internal_llm_weights",
+                "retrieved_fragments": {}, # LOCK 1: Explicitly clear on rejection
+                "source_map": {}
+            }
+
 
         # Case 3: Hybrid/Grounded Confidence Check
         # Requirement 2: Classify whether answer is in context with high confidence
@@ -709,7 +714,9 @@ class MetacognitiveBrain:
                 updates.update({
                     "evidence": [],
                     "perceived_media": [],
-                    "intent": "general_intelligence"
+                    "intent": "general_intelligence",
+                    "retrieved_fragments": {}, # LOCK 1: Hard clear during evaluation rejection
+                    "source_map": {}
                 })
 
             telemetry.end_activity(tid, {"mode": mode, "confidence": eval_res.strip(), "action": action_msg})
@@ -727,7 +734,9 @@ class MetacognitiveBrain:
             "response_mode": "internal_llm_weights",
             "intent": "general_intelligence",
             "evidence": [],
-            "perceived_media": []
+            "perceived_media": [],
+            "retrieved_fragments": {}, # LOCK 3: Consistency
+            "source_map": {}
         }
 
     async def process_perception(self, state: UltimaRAGState) -> Dict:
@@ -835,6 +844,7 @@ class MetacognitiveBrain:
             
             add_fused(unified.get("text_evidence", []), "text_summary")
             add_fused(unified.get("visual_evidence", []), "visual_perception")
+            add_fused(unified.get("audio_evidence", []), "audio_intelligence")
             
             combined_evidence = evidence + fused_evidence
             
@@ -1191,7 +1201,13 @@ class MetacognitiveBrain:
         tid = telemetry.start_activity("GeneralSynthesis", "Synthesizing general response")
         answer, reasoning = await self.general_agent.generate(state["query"], state["history"], check_abort_fn=state.get("check_abort_fn"))
         telemetry.end_activity(tid)
-        return {"answer": answer, "reasoning": reasoning, "status": "SYNTHESIZED"}
+        return {
+            "answer": answer, 
+            "reasoning": reasoning, 
+            "status": "SYNTHESIZED",
+            "retrieved_fragments": {}, # LOCK 2: Extra safety for general path
+            "source_map": {}
+        }
     async def self_critique(self, state: UltimaRAGState) -> Dict:
         """Internal Critic & Hallucination Filter."""
         logger.info(f"Brain Node: Critic - Verifying Grounds... (State Keys: {list(state.keys())})")
@@ -1688,8 +1704,8 @@ class MetacognitiveBrain:
                     "intent": last_state.get("intent"),
                     "ui_hints": last_state.get("ui_hints"),
                     "conversation_id": conversation_id,
-                    "retrieved_fragments": last_state.get("retrieved_fragments", {}),
-                    "source_map": last_state.get("source_map", {}),
+                    "retrieved_fragments": {} if (last_state.get("intent") == "general_intelligence" or last_state.get("response_mode") == "internal_llm_weights") else last_state.get("retrieved_fragments", {}),
+                    "source_map": {} if (last_state.get("intent") == "general_intelligence" or last_state.get("response_mode") == "internal_llm_weights") else last_state.get("source_map", {}),
                     "metadata": {
                         **last_state.get("metadata", {}),
                         "reasoning": last_state.get("reasoning")
@@ -1972,10 +1988,35 @@ JSON ARRAY:"""
 
     def get_status(self, conversation_id: Optional[str] = None) -> Dict:
         """Get current brain and database status (SOTA Health Check)"""
-        chunks_count = self.db.get_knowledge_count(conversation_id=conversation_id)
+        chunks_count = 0
+        assets_count = 0
+        indexed_files_count = 0
+        
+        if conversation_id is not None:
+            # SOTA: Explicit isolation. Even if ID is "", we must NOT fall back to global counts.
+            if conversation_id == "":
+                chunks_count = 0
+                assets_count = 0
+                indexed_files_count = 0
+            else:
+                # SOTA: Always call robust get_knowledge_count. 
+                # This triggers 'Self-Healing' if the metadata cache is stale.
+                chunks_count = self.db.get_knowledge_count(conversation_id=conversation_id)
+                
+                # Fetch other metadata from cache (will be repaired in background by DB-layer sync)
+                conv = self.db.get_conversation(conversation_id)
+                if conv:
+                    assets_count = conv.get("assets_count", 0)
+                    indexed_files_count = conv.get("indexed_files_count", 0)
+        else:
+            # Systems-level global count (only if no ID provided at all)
+            chunks_count = self.db.get_knowledge_count()
+
         return {
             "ready": True,
             "chunks_count": chunks_count,
+            "assets_count": assets_count,
+            "indexed_files_count": indexed_files_count,
             "memory_usage": "optimized",
             "agents": {
                 "planner": "ready",

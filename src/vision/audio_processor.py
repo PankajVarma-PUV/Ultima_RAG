@@ -22,7 +22,7 @@ Output structure:
 - sub_type='audio': Transcription segments and summaries
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable
 import os
 
 from ..core.utils import logger
@@ -44,57 +44,74 @@ class AudioProcessor:
             except ImportError:
                 logger.warning("faster-whisper not installed. Audio processing will be stubbed.")
 
-    async def transcribe(self, file_path: str) -> List[Dict]:
+    def _build_structured_context(self, segments: List[Dict]) -> str:
         """
-        Transcribe audio file and generate a semantic summary.
+        Merges transcription segments into a time-aligned structured text block.
+        Ensures the Narrative LLM receives a professional intelligence report.
+        """
+        lines = []
+        for seg in segments:
+            t = seg.get('timestamp', '0:00')
+            content = seg.get('content', '').strip()
+            if content:
+                lines.append(f"[{t}] SPEECH: {content}")
         
-        Returns:
-            List of dicts with 'content', 'sub_type', and optional 'timestamp'
+        return "\n".join(lines)
+
+    async def transcribe(self, file_path: str, check_abort_fn: Optional[Callable] = None) -> List[Dict]:
         """
-        logger.info(f"Transcribing audio: {file_path}")
+        Transcribe audio file and generate a high-fidelity structured transcript.
+        Designed for SOTA enrichment by the ContentEnricher agent.
+        """
+        if check_abort_fn and check_abort_fn():
+            logger.info("Abort signaled before audio transcription. Skipping.")
+            return []
+
+        logger.info(f"🚀 Transcribing audio: {os.path.basename(file_path)}")
         self._load_model()
         
-        scraped_items = []
-        full_transcript = []
+        raw_segments = []
         
         if self.model:
             try:
+                # beam_size 5 for high-fidelity decoding
                 segments, info = self.model.transcribe(file_path, beam_size=5)
                 for segment in segments:
+                    if check_abort_fn and check_abort_fn():
+                        logger.info("Abort signaled during audio transcription loop.")
+                        break
+                        
                     timestamp = f"{int(segment.start) // 60}:{int(segment.start) % 60:02d}"
                     content = segment.text.strip()
                     if content:
-                        scraped_items.append({
+                        raw_segments.append({
                             "content": content,
-                            "sub_type": "audio",
                             "timestamp": timestamp
                         })
-                        full_transcript.append(content)
             except Exception as e:
                 logger.error(f"Whisper transcription error: {e}")
         else:
             logger.warning("Using placeholder transcription (faster-whisper not loaded)")
-            scraped_items.append({
+            raw_segments.append({
                 "content": "Audio transcript unavailable: faster-whisper not installed.",
-                "sub_type": "audio"
+                "timestamp": "0:00"
             })
 
-        # Audio Summary Compression
-        if full_transcript:
-            try:
-                client = get_ollama_client()
-                all_text = " ".join(full_transcript)
-                
-                summary_prompt = f"Summarize the semantic meaning of this audio transcript in one or two concise sentences:\n\n{all_text}"
-                summary = client.generate(summary_prompt, temperature=0.1)
-                if summary:
-                    scraped_items.append({
-                        "content": summary.strip(),
-                        "sub_type": "audio"
-                    })
-            except Exception as se:
-                logger.error(f"Audio summary compression failed: {se}")
+        # ── STRICT CHECK: Before Structured Build ──
+        if check_abort_fn and check_abort_fn(): return []
 
-        logger.info(f"Audio processing complete: {len(scraped_items)} items")
-        return scraped_items
+        structured_transcript = self._build_structured_context(raw_segments)
+        
+        if not structured_transcript.strip():
+            logger.warning(f"No speech detected in audio: {os.path.basename(file_path)}")
+            return []
+
+        # Return a single item with the structured transcript.
+        # This will be passed to the ContentEnricher for the final 'Beautiful Description'.
+        logger.info(f"Audio processing complete: {len(raw_segments)} segments transcribed.")
+        return [{
+            "content": structured_transcript,
+            "sub_type": "audio",
+            "metadata": {"type": "audio_transcript", "segments": len(raw_segments)}
+        }]
 
