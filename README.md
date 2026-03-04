@@ -15,7 +15,7 @@
 
 ## 🌌 What is SpandaOS?
 
-SpandaOS goes far beyond traditional "retrieve and generate" pipelines. It is a **Metacognitive Brain** built on a LangGraph state machine orchestrating **30 specialized AI agents**. It features seamless multimodal ingestion (vision, audio, video, documents), inline cross-encoder reranking, strict NLI-based fact-checking, surgical hallucination healing, and a closed-loop continuous learning system that permanently adapts to user feedback.
+SpandaOS (Spanda Operating Soul) goes far beyond traditional "retrieve and generate" pipelines. It is a **Metacognitive Brain** built on a LangGraph state machine orchestrating **30 specialized AI agents**. It features seamless multimodal ingestion (vision, audio, video, documents), inline cross-encoder reranking, strict NLI-based fact-checking, surgical hallucination healing, and a closed-loop continuous learning system that permanently adapts to user feedback.
 
 With a rich, cinematic streaming UI, SpandaOS surfaces the "inner monologue" of the agents to the user in real-time, providing total transparency into its reasoning process and evaluation metrics.
 
